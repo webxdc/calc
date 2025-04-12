@@ -1,19 +1,13 @@
 import "./App.css";
 import styled from "@emotion/styled";
 import { useEffect, useState } from "react";
-import { FileBar } from "./components/FileBar";
 import {
   get_documentation_model,
   get_model,
-  uploadFile,
 } from "./components/rpc";
 import {
-  createNewModel,
-  deleteSelectedModel,
   loadModelFromStorageOrCreate,
-  saveModelToStorage,
   saveSelectedModelInStorage,
-  selectModelFromStorage,
 } from "./components/storage";
 
 // From IronCalc
@@ -81,33 +75,6 @@ function App() {
 
   return (
     <Wrapper>
-      <FileBar
-        model={model}
-        onModelUpload={async (arrayBuffer: ArrayBuffer, fileName: string) => {
-          const blob = await uploadFile(arrayBuffer, fileName);
-
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          const newModel = Model.from_bytes(bytes);
-          saveModelToStorage(newModel);
-
-          setModel(newModel);
-        }}
-        newModel={() => {
-          setModel(createNewModel());
-        }}
-        setModel={(uuid: string) => {
-          const newModel = selectModelFromStorage(uuid);
-          if (newModel) {
-            setModel(newModel);
-          }
-        }}
-        onDelete={() => {
-          const newModel = deleteSelectedModel();
-          if (newModel) {
-            setModel(newModel);
-          }
-        }}
-      />
       <IronCalc model={model} />
     </Wrapper>
   );
