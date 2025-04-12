@@ -15,8 +15,8 @@ importers:
         specifier: ^11.14.0
         version: 11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0)
       '@ironcalc/workbook':
-        specifier: file:../../IronCalc/
-        version: file:../../IronCalc(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+        specifier: 0.3.2
+        version: 0.3.2(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@mui/material':
         specifier: ^6.4
         version: 6.4.11(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -815,11 +815,11 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ironcalc/wasm@file:../../../bindings/wasm/pkg':
-    resolution: {directory: ../../../bindings/wasm/pkg, type: directory}
+  '@ironcalc/wasm@0.3.2':
+    resolution: {integrity: sha512-X4p9qoFKgiOQdo3pwWLa+JnsdV/mkzHR2qabqxZWbCubTJwkQUdImFDowuMVy7sC4WJ6eSP+MDBMy4Rnl1L0JQ==}
 
-  '@ironcalc/workbook@file:../../IronCalc':
-    resolution: {directory: ../../IronCalc, type: directory}
+  '@ironcalc/workbook@0.3.2':
+    resolution: {integrity: sha512-dlklsniuCz55WwokdMgACFVijCKmFKzCtoahB9o9o0t0PXMb89nFuS5xuaS7bK5pSKmjGleTbL7qMkDuhH8nvA==}
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
       react: ^18.0.0 || ^19.0.0
@@ -2545,13 +2545,13 @@ snapshots:
   '@esbuild/win32-x64@0.25.2':
     optional: true
 
-  '@ironcalc/wasm@file:../../../bindings/wasm/pkg': {}
+  '@ironcalc/wasm@0.3.2': {}
 
-  '@ironcalc/workbook@file:../../IronCalc(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+  '@ironcalc/workbook@0.3.2(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.1.1)(react@19.1.0)
       '@emotion/styled': 11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0)
-      '@ironcalc/wasm': file:../../../bindings/wasm/pkg
+      '@ironcalc/wasm': 0.3.2
       '@mui/material': 6.4.11(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@mui/system': 6.4.11(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0)
       '@types/react': 19.1.1
