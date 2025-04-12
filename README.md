@@ -1,17 +1,17 @@
-# IronCalc application
+# IronCalc Webxdc
 
-This is the front end deployed at https:://app.ironcalc.com
+Bundle the [ironcal](https://github.com/ironcalc/ironcalc) frontend as webxdc application.
+
+## Syncing
+This webxdc currently does not support any syncing between devices.
 
 
-To build for production:
+## Building
+You can build the webxdc with the following commands:
 
+```bash
+pnpm install
+pnpm build
 ```
-npm install
-npm run build
-```
 
-A development build:
-
-```
-npm run dev
-```
+The webxdc will then be in the `dist-xdc` folder.
