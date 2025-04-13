@@ -13,12 +13,14 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
+    "@ironcalc/wasm": "file:/home/septias/coding/tmp/IronCalc/bindings/wasm/pkg",
     "@ironcalc/workbook": "0.3.2",
     "@mui/material": "^6.4",
     "@webxdc/vite-plugins": "^1.5.1",
     "lucide-react": "^0.473.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "vite-plugin-wasm": "^3.4.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -26,7 +28,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.2",
-    "vite": "^6.0.5",
+    "vite": "^6.2.5",
     "vite-plugin-svgr": "^4.2.0"
   }
 }

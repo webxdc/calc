@@ -2,55 +2,19 @@ import "./App.css";
 import styled from "@emotion/styled";
 import { useEffect, useState } from "react";
 import {
-  get_documentation_model,
-  get_model,
-} from "./components/rpc";
-import {
   loadModelFromStorageOrCreate,
   saveSelectedModelInStorage,
 } from "./components/storage";
 
 // From IronCalc
-import { IronCalc, IronCalcIcon, Model, init } from "@ironcalc/workbook";
-
+import { IronCalc, IronCalcIcon } from "@ironcalc/workbook";
+import {Model} from "@ironcalc/wasm";
 function App() {
   const [model, setModel] = useState<Model | null>(null);
 
   useEffect(() => {
-    async function start() {
-      await init();
-      const queryString = window.location.search;
-      const urlParams = new URLSearchParams(queryString);
-      const modelHash = urlParams.get("model");
-      const exampleFilename = urlParams.get("example");
-      // If there is a model name ?model=modelHash we try to load it
-      // if there is not, or the loading failed we load an empty model
-      if (modelHash) {
-        // Get a remote model
-        try {
-          const model_bytes = await get_model(modelHash);
-          const importedModel = Model.from_bytes(model_bytes);
-          localStorage.removeItem("selected");
-          setModel(importedModel);
-        } catch (e) {
-          alert("Model not found, or failed to load");
-        }
-      } else if (exampleFilename) {
-        try {
-          const model_bytes = await get_documentation_model(exampleFilename);
-          const importedModel = Model.from_bytes(model_bytes);
-          localStorage.removeItem("selected");
-          setModel(importedModel);
-        } catch (e) {
-          alert("Example file not found, or failed to load");
-        }
-      } else {
-        // try to load from local storage
-        const newModel = loadModelFromStorageOrCreate();
-        setModel(newModel);
-      }
-    }
-    start();
+      const newModel = loadModelFromStorageOrCreate();
+      setModel(newModel);
   }, []);
 
   if (!model) {

@@ -14,6 +14,9 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.0
         version: 11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0)
+      '@ironcalc/wasm':
+        specifier: file:/home/septias/coding/tmp/IronCalc/bindings/wasm/pkg
+        version: file:../../tmp/IronCalc/bindings/wasm/pkg
       '@ironcalc/workbook':
         specifier: 0.3.2
         version: 0.3.2(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -32,6 +35,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.1.0(react@19.1.0)
+      vite-plugin-wasm:
+        specifier: ^3.4.1
+        version: 3.4.1(vite@6.2.6(terser@5.39.0))
     devDependencies:
       '@biomejs/biome':
         specifier: 1.9.4
@@ -49,7 +55,7 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
       vite:
-        specifier: ^6.0.5
+        specifier: ^6.2.5
         version: 6.2.6(terser@5.39.0)
       vite-plugin-svgr:
         specifier: ^4.2.0
@@ -817,6 +823,9 @@ packages:
 
   '@ironcalc/wasm@0.3.2':
     resolution: {integrity: sha512-X4p9qoFKgiOQdo3pwWLa+JnsdV/mkzHR2qabqxZWbCubTJwkQUdImFDowuMVy7sC4WJ6eSP+MDBMy4Rnl1L0JQ==}
+
+  '@ironcalc/wasm@file:../../tmp/IronCalc/bindings/wasm/pkg':
+    resolution: {directory: ../../tmp/IronCalc/bindings/wasm/pkg, type: directory}
 
   '@ironcalc/workbook@0.3.2':
     resolution: {integrity: sha512-dlklsniuCz55WwokdMgACFVijCKmFKzCtoahB9o9o0t0PXMb89nFuS5xuaS7bK5pSKmjGleTbL7qMkDuhH8nvA==}
@@ -1639,6 +1648,11 @@ packages:
     resolution: {integrity: sha512-Jy9qLB2/PyWklpYy0xk0UU3TlU0t2UMpJXZvf+hWII1lAmRHrOUKi11Uw8N3rxoNk7atZNYO3pR3vI1f7oi+6w==}
     peerDependencies:
       vite: '>=2.6.0'
+
+  vite-plugin-wasm@3.4.1:
+    resolution: {integrity: sha512-ja3nSo2UCkVeitltJGkS3pfQHAanHv/DqGatdI39ja6McgABlpsZ5hVgl6wuR8Qx5etY3T5qgDQhOWzc5RReZA==}
+    peerDependencies:
+      vite: ^2 || ^3 || ^4 || ^5 || ^6
 
   vite-plugin-zip-pack@1.2.4:
     resolution: {integrity: sha512-QgZEeiWayE2ZvMbkvcqWf94p/Z5YeNHZlkwXWIkkoISjePiWVXKRX2xCGmsURe9acGVdkobZ31dFJuCp3j1hMg==}
@@ -2547,6 +2561,8 @@ snapshots:
 
   '@ironcalc/wasm@0.3.2': {}
 
+  '@ironcalc/wasm@file:../../tmp/IronCalc/bindings/wasm/pkg': {}
+
   '@ironcalc/workbook@0.3.2(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.1.1)(react@19.1.0)
@@ -3360,6 +3376,10 @@ snapshots:
       - rollup
       - supports-color
       - typescript
+
+  vite-plugin-wasm@3.4.1(vite@6.2.6(terser@5.39.0)):
+    dependencies:
+      vite: 6.2.6(terser@5.39.0)
 
   vite-plugin-zip-pack@1.2.4(vite@6.2.6(terser@5.39.0)):
     dependencies:
