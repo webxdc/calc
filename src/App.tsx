@@ -67,12 +67,23 @@ function App() {
       if (!model) {
         return
       }
-      console.log("Sending external diffs", model.flushSendQueue());
-      channel.send(model.flushSendQueue())
+      let diff = model.flushSendQueue();
+      if (diff.length <= 1) {
+        return
+      }
+      saveSelectedModelInStorage(model);
+      console.log("Sending external diffs", diff);
+      channel.send(diff)
     }, 1000)
     channel.setListener((payload) => {
       console.log("Received external diffs", payload);
-      model?.applyExternalDiffs(payload)
+      if (!model) {
+        console.warn("Received external diffs but model is not initialized yet");
+        return
+      }
+      model.applyExternalDiffs(payload);
+      const newModel = Model.from_bytes(model.toBytes());
+      setModel(newModel);
     })
     return () => {
       channel.leave()
@@ -89,13 +100,6 @@ function App() {
     );
   }
 
-  // We try to save the model every second
-  setInterval(() => {
-    const queue = model.flushSendQueue();
-    if (queue.length !== 1) {
-      saveSelectedModelInStorage(model);
-    }
-  }, 1000);
 
   // We could use context for model, but the problem is that it should initialized to null.
   // Passing the property down makes sure it is always defined.
