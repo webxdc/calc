@@ -13,6 +13,14 @@ import {
 // From IronCalc
 import { IronCalc, IronCalcIcon, Model, init } from "@ironcalc/workbook";
 
+import { Webxdc } from "@webxdc/types";
+
+declare global {
+  interface Window {
+    webxdc: Webxdc<any>;
+  }
+}
+
 function App() {
   const [model, setModel] = useState<Model | null>(null);
 
@@ -52,6 +60,25 @@ function App() {
     }
     start();
   }, []);
+
+  useEffect(() => {
+    const channel = window.webxdc.joinRealtimeChannel()
+    const int = setInterval(() => {
+      if (!model) {
+        return
+      }
+      console.log("Sending external diffs", model.flushSendQueue());
+      channel.send(model.flushSendQueue())
+    }, 1000)
+    channel.setListener((payload) => {
+      console.log("Received external diffs", payload);
+      model?.applyExternalDiffs(payload)
+    })
+    return () => {
+      channel.leave()
+      clearInterval(int)
+    }
+  })
 
   if (!model) {
     return (
