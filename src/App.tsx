@@ -24,7 +24,7 @@ declare global {
 
 function App() {
   const [model, setModel] = useState<Model | null>(null);
-
+  const uuid = get_or_create_uuid();
   useEffect(() => {
     async function start() {
       await init();
@@ -76,8 +76,8 @@ function App() {
       }
       saveSelectedModelInStorage(model);
       const diffBase64 = base64Encode(diff);
-      console.log("Sending external diffs with lenght", diffBase64.length);
-      window.webxdc.sendUpdate({ payload: { data: diffBase64, sender: window.webxdc.selfAddr } }, "");
+      console.log("Sending external diffs with length", diffBase64.length);
+      window.webxdc.sendUpdate({ payload: { data: diffBase64, sender: uuid } }, "");
     }, 1000)
 
     window.webxdc.setUpdateListener((update) => {
@@ -88,7 +88,7 @@ function App() {
         console.warn("Received external diffs but model is not initialized yet");
         return
       }
-      if (payload.sender === window.webxdc.selfAddr) {
+      if (payload.sender === uuid) {
         return
       }
       // Decode base64 back to binary and convert to Uint8Array
@@ -148,14 +148,21 @@ const Loading = styled("div")`
 export default App;
 
 function get_last_serial(): number {
-  // get int number from localStorage with key "last_serial"
-  // and fill null value with 0 default
-
   const last_serial = localStorage.getItem("last_serial");
   if (last_serial === null) {
     localStorage.setItem("last_serial", "0");
     return 0;
   }
   return parseInt(last_serial, 10) || 0;
+}
+
+function get_or_create_uuid(): string {
+  const uuid = localStorage.getItem("uuid");
+  if (uuid) {
+    return uuid
+  }
+  const newUuid = crypto.randomUUID();
+  localStorage.setItem("uuid", newUuid);
+  return newUuid
 }
 
