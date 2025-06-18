@@ -18,7 +18,7 @@ import { encode as base64Encode, decode as base64Decode } from "base64-arraybuff
 
 declare global {
   interface Window {
-    webxdc: Webxdc<{ data: string }>;
+    webxdc: Webxdc<{ data: string, sender: string }>;
   }
 }
 
@@ -62,6 +62,8 @@ function App() {
     start();
   }, []);
 
+  let max_serial = get_last_serial()
+
   useEffect(() => {
     const int = setInterval(() => {
       if (!model) {
@@ -73,28 +75,34 @@ function App() {
       }
       saveSelectedModelInStorage(model);
       const diffBase64 = base64Encode(diff);
-      console.log("Sending external diffs", diffBase64);
-      window.webxdc.sendUpdate({ payload: { data: diffBase64 } }, "");
+      console.log("Sending external diffs with lenght", diffBase64.length);
+      window.webxdc.sendUpdate({ payload: { data: diffBase64, sender: window.webxdc.selfAddr } }, "");
     }, 1000)
 
+    window.webxdc.setUpdateListener((update) => {
+      const payload = update.payload;
+      localStorage.setItem("last_serial", update.serial.toString());
+      console.log("Received external diffs with length ", payload.data.length);
+      if (!model) {
+        console.warn("Received external diffs but model is not initialized yet");
+        return
+      }
+      if (payload.sender === window.webxdc.selfAddr) {
+        return
+      }
+      // Decode base64 back to binary and convert to Uint8Array
+      const diffBuffer = base64Decode(payload.data);
+      const diff = new Uint8Array(diffBuffer);
+      model.applyExternalDiffs(diff);
+      saveSelectedModelInStorage(model);
+      const newModel = Model.from_bytes(model.toBytes());
+      setModel(newModel);
+    }, max_serial)
     return () => {
       clearInterval(int)
     }
   })
-
-  window.webxdc.setUpdateListener((update) => {
-    console.log("Received external diffs", update.payload.data);
-    if (!model) {
-      console.warn("Received external diffs but model is not initialized yet");
-      return
-    }
-    // Decode base64 back to binary and convert to Uint8Array
-    const diffBuffer = base64Decode(update.payload.data);
-    const diff = new Uint8Array(diffBuffer);
-    model.applyExternalDiffs(diff);
-    const newModel = Model.from_bytes(model.toBytes());
-    setModel(newModel);
-  })
+  
 
   if (!model) {
     return (
@@ -137,3 +145,16 @@ const Loading = styled("div")`
 `;
 
 export default App;
+
+function get_last_serial(): number {
+  // get int number from localStorage with key "last_serial"
+  // and fill null value with 0 default
+
+  const last_serial = localStorage.getItem("last_serial");
+  if (last_serial === null) {
+    localStorage.setItem("last_serial", "0");
+    return 0;
+  }
+  return parseInt(last_serial, 10) || 0;
+}
+
