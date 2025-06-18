@@ -14,10 +14,11 @@ import {
 import { IronCalc, IronCalcIcon, Model, init } from "@ironcalc/workbook";
 
 import { Webxdc } from "@webxdc/types";
+import { encode as base64Encode, decode as base64Decode } from "base64-arraybuffer";
 
 declare global {
   interface Window {
-    webxdc: Webxdc<any>;
+    webxdc: Webxdc<{ data: string }>;
   }
 }
 
@@ -62,7 +63,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const channel = window.webxdc.joinRealtimeChannel()
     const int = setInterval(() => {
       if (!model) {
         return
@@ -72,23 +72,28 @@ function App() {
         return
       }
       saveSelectedModelInStorage(model);
-      console.log("Sending external diffs", diff);
-      channel.send(diff)
+      const diffBase64 = base64Encode(diff);
+      console.log("Sending external diffs", diffBase64);
+      window.webxdc.sendUpdate({ payload: { data: diffBase64 } }, "");
     }, 1000)
-    channel.setListener((payload) => {
-      console.log("Received external diffs", payload);
-      if (!model) {
-        console.warn("Received external diffs but model is not initialized yet");
-        return
-      }
-      model.applyExternalDiffs(payload);
-      const newModel = Model.from_bytes(model.toBytes());
-      setModel(newModel);
-    })
+
     return () => {
-      channel.leave()
       clearInterval(int)
     }
+  })
+
+  window.webxdc.setUpdateListener((update) => {
+    console.log("Received external diffs", update.payload.data);
+    if (!model) {
+      console.warn("Received external diffs but model is not initialized yet");
+      return
+    }
+    // Decode base64 back to binary and convert to Uint8Array
+    const diffBuffer = base64Decode(update.payload.data);
+    const diff = new Uint8Array(diffBuffer);
+    model.applyExternalDiffs(diff);
+    const newModel = Model.from_bytes(model.toBytes());
+    setModel(newModel);
   })
 
   if (!model) {

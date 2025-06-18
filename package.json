@@ -17,6 +17,7 @@
     "@mui/material": "^6.4",
     "@webxdc/types": "^2.1.2",
     "@webxdc/vite-plugins": "^1.5.1",
+    "base64-arraybuffer": "^1.0.2",
     "lucide-react": "^0.473.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
