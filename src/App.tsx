@@ -65,10 +65,11 @@ function App() {
   let max_serial = get_last_serial()
 
   useEffect(() => {
+    if (!model) {
+      return
+    }
     const int = setInterval(() => {
-      if (!model) {
-        return
-      }
+
       let diff = model.flushSendQueue();
       if (diff.length <= 1) {
         return
@@ -102,7 +103,7 @@ function App() {
       clearInterval(int)
     }
   })
-  
+
 
   if (!model) {
     return (
