@@ -76,14 +76,12 @@ function App() {
       }
       saveSelectedModelInStorage(model);
       const diffBase64 = base64Encode(diff);
-      console.log("Sending external diffs with length", diffBase64.length);
       window.webxdc.sendUpdate({ payload: { data: diffBase64, sender: uuid } }, "");
     }, 1000)
 
     window.webxdc.setUpdateListener((update) => {
       const payload = update.payload;
       localStorage.setItem("last_serial", update.serial.toString());
-      console.log("Received external diffs with length ", payload.data.length);
       if (!model) {
         console.warn("Received external diffs but model is not initialized yet");
         return
