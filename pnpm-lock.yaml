@@ -20,9 +20,15 @@ importers:
       '@mui/material':
         specifier: ^6.4
         version: 6.4.11(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react@19.1.0))(@types/react@19.1.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@webxdc/types':
+        specifier: ^2.1.2
+        version: 2.1.2
       '@webxdc/vite-plugins':
         specifier: ^1.5.1
         version: 1.5.1(vite@6.2.6(terser@5.39.0))
+      base64-arraybuffer:
+        specifier: ^1.0.2
+        version: 1.0.2
       lucide-react:
         specifier: ^0.473.0
         version: 0.473.0(react@19.1.0)
@@ -1159,6 +1165,9 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0
 
+  '@webxdc/types@2.1.2':
+    resolution: {integrity: sha512-oklcyHvUXqCS5JwbPVaN8tt7nSB8ffRmyrUlVt0HeSn4kDyNE46oKSbw3KtrDzl530KHnm67LfcK/AjWbBoXUA==}
+
   '@webxdc/vite-plugins@1.5.1':
     resolution: {integrity: sha512-MQ+WalngoAVuiOFHiJo0q4XU+iv7AiIN/f52flOZjeI/rHWvGF0YvG8Pbu5ID5TpTsYOEqIlp9wgUa7+fbBmzQ==}
 
@@ -1188,6 +1197,10 @@ packages:
     resolution: {integrity: sha512-7gD3pRadPrbjhjLyxebmx/WrFYcuSjZ0XbdUujQMZ/fcE9oeewk2U/7PCvez84UeuK3oSjmPZ0Ch0dlupQvGzw==}
     peerDependencies:
       '@babel/core': ^7.4.0 || ^8.0.0-0 <8.0.0
+
+  base64-arraybuffer@1.0.2:
+    resolution: {integrity: sha512-I3yl4r9QB5ZRY3XuJVEPfc2XhZO6YweFPI+UovAzn+8/hb3oJ6lnysaFcjVpkCPfVWFUDvoZ8kmVDP7WyRtYtQ==}
+    engines: {node: '>= 0.6.0'}
 
   browserslist-to-esbuild@2.1.1:
     resolution: {integrity: sha512-KN+mty6C3e9AN8Z5dI1xeN15ExcRNeISoC3g7V0Kax/MMF9MSoYA2G7lkTTcVUFntiEjkpI0HNgqJC1NjdyNUw==}
@@ -2874,6 +2887,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@webxdc/types@2.1.2': {}
+
   '@webxdc/vite-plugins@1.5.1(vite@6.2.6(terser@5.39.0))':
     dependencies:
       '@vitejs/plugin-basic-ssl': 1.2.0(vite@6.2.6(terser@5.39.0))
@@ -2918,6 +2933,8 @@ snapshots:
       '@babel/helper-define-polyfill-provider': 0.6.4(@babel/core@7.26.10)
     transitivePeerDependencies:
       - supports-color
+
+  base64-arraybuffer@1.0.2: {}
 
   browserslist-to-esbuild@2.1.1(browserslist@4.24.4):
     dependencies:
