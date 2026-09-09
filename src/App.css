@@ -56,3 +56,8 @@ body {
   font-family: var(--typography-font-family);
   font-size: var(--typography-font-size);
 }
+
+/* Hide the option to change locale settings */
+.ic-root .ic-sheet-tab-bar-right-container {
+  display: none;
+}
