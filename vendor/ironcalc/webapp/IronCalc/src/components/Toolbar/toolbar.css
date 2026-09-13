@@ -6,7 +6,6 @@
   background: var(--palette-common-white);
   height: var(--toolbar-height);
   border-bottom: 1px solid var(--palette-grey-300);
-  border-radius: 4px 4px 0 0;
 }
 
 /* Toolbar container */
@@ -47,6 +46,7 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+  color: var(--palette-common-black);
   font-family: var(--typography-font-family);
   font-size: var(--typography-font-size);
   border: 1px solid var(--palette-grey-300);
@@ -81,6 +81,7 @@
   align-items: center;
   justify-content: center;
   background-color: var(--palette-common-white);
+  color: var(--palette-common-black);
   border: none;
   cursor: pointer;
 }
@@ -112,4 +113,15 @@
   height: 100%;
   align-items: center;
   justify-content: center;
+}
+
+/* Anchor for dropdown menus triggered from the toolbar (e.g. merge cells) */
+.ic-toolbar-menu-anchor {
+  display: inline-flex;
+  width: fit-content;
+  flex: 0 0 auto;
+}
+
+.ic-toolbar-menu-anchor[aria-expanded="true"] .ic-button--ghost {
+  background-color: var(--palette-grey-200);
 }

@@ -27,6 +27,7 @@ import {
 } from "../../icons";
 import { IconButton } from "../Button/IconButton";
 import ColorPicker from "../ColorPicker/ColorPicker";
+import { themeColor } from "../ColorPicker/util";
 import "./border-picker.css";
 import LineStylePicker from "./LineStylePicker";
 
@@ -42,9 +43,6 @@ type Position = {
   top: number;
   left: number;
 };
-
-// --palette-common-black
-const DEFAULT_BORDER_COLOR = "#272525";
 
 const BORDER_BUTTONS = [
   {
@@ -123,7 +121,10 @@ export default function BorderPicker({
 
   const [position, setPosition] = useState<Position | null>(null);
   const [borderSelected, setBorderSelected] = useState<BorderType | null>(null);
-  const [borderColor, setBorderColor] = useState<Color>(DEFAULT_BORDER_COLOR);
+  const [defaultColor, setDefaultColor] = useState(() =>
+    themeColor("--palette-common-black", anchorEl.current),
+  );
+  const [borderColor, setBorderColor] = useState<Color>(defaultColor);
   const [borderStyle, setBorderStyle] = useState(BorderStyle.Thin);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [stylePickerOpen, setStylePickerOpen] = useState(false);
@@ -154,18 +155,6 @@ export default function BorderPicker({
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [anchorEl, open]);
-
-  useEffect(() => {
-    if (!borderSelected) {
-      return;
-    }
-
-    onChange({
-      color: borderColor,
-      style: borderStyle,
-      border: borderSelected,
-    });
-  }, [borderColor, borderStyle, borderSelected, onChange]);
 
   useEffect(() => {
     if (!open) {
@@ -199,14 +188,16 @@ export default function BorderPicker({
 
   useEffect(() => {
     if (open) {
+      const color = themeColor("--palette-common-black", anchorEl.current);
+      setDefaultColor(color);
+      setBorderColor(color);
       return;
     }
     setBorderSelected(null);
-    setBorderColor(DEFAULT_BORDER_COLOR);
     setBorderStyle(BorderStyle.Thin);
     setColorPickerOpen(false);
     setStylePickerOpen(false);
-  }, [open]);
+  }, [open, anchorEl]);
 
   useEffect(() => {
     if (!open) {
@@ -230,11 +221,23 @@ export default function BorderPicker({
     };
   }, [open, onClose, colorPickerOpen]);
 
+  const applyBorder = (
+    border: BorderType,
+    color: Color,
+    style: BorderStyle,
+  ): void => {
+    onChange({ color, style, border });
+  };
+
   const toggleBorder = (
     value: BorderType,
     offValue: BorderType | null,
   ): void => {
-    setBorderSelected((current) => (current === value ? offValue : value));
+    const next = borderSelected === value ? offValue : value;
+    setBorderSelected(next);
+    if (next !== null) {
+      applyBorder(next, borderColor, borderStyle);
+    }
   };
 
   if (!open || !anchorEl.current) {
@@ -283,6 +286,7 @@ export default function BorderPicker({
                 onClick={() => {
                   if (value === BorderType.None) {
                     setBorderSelected(BorderType.None);
+                    applyBorder(BorderType.None, borderColor, borderStyle);
                     return;
                   }
                   toggleBorder(value, button.offValue);
@@ -313,11 +317,14 @@ export default function BorderPicker({
           </button>
           <ColorPicker
             color={borderColor}
-            defaultColor={DEFAULT_BORDER_COLOR}
+            defaultColor={defaultColor}
             title={t("color_picker.default")}
             onChange={(color) => {
               setBorderColor(color);
               setColorPickerOpen(false);
+              if (borderSelected) {
+                applyBorder(borderSelected, color, borderStyle);
+              }
             }}
             onClose={() => {
               setColorPickerOpen(false);
@@ -346,6 +353,9 @@ export default function BorderPicker({
               onSelect={(style) => {
                 setBorderStyle(style);
                 setStylePickerOpen(false);
+                if (borderSelected) {
+                  applyBorder(borderSelected, borderColor, style);
+                }
               }}
             />
           )}

@@ -1,0 +1,19 @@
+.ic-link-dialog {
+  width: 380px;
+}
+
+.ic-link-dialog-tabs {
+  margin-bottom: 4px;
+}
+
+.ic-link-dialog-footer {
+  justify-content: space-between;
+}
+
+.ic-link-dialog-delete {
+  color: var(--palette-error-main);
+}
+
+.ic-link-dialog-delete:hover {
+  color: var(--palette-error-dark);
+}

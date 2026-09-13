@@ -14,7 +14,7 @@
     "new": "Neu",
     "blank_workbook": "Leere Arbeitsmappe",
     "import_workbook": "Arbeitsmappe importieren",
-    "storage_warning": "<warn>Achtung!</warn> Diese App ist ein Proof of Concept und kein fertiges Produkt. Experimentieren, teilen sowie hoch- und herunterladen Sie Modelle gerne, aber teilen oder laden Sie keine Modelle mit sensiblen oder privaten Daten hoch. Daten werden regelmäßig gelöscht. <docsLink>Mehr erfahren</docsLink>",
+    "storage_warning": "<warn>Achtung!</warn> Diese App ist ein Proof of Concept und kein fertiges Produkt. Sie können Modelle gerne erkunden, teilen sowie hoch- und herunterladen, aber teilen oder laden Sie keine Modelle mit sensiblen oder privaten Daten hoch. Daten werden regelmäßig gelöscht. <docsLink>Mehr erfahren</docsLink>",
     "templates": {
       "choose_template": "Vorlage auswählen",
       "templates": "Vorlagen",
@@ -27,8 +27,6 @@
       "category_games": "Spiele",
       "yearly_calendar": "Jahreskalender",
       "yearly_calendar_description": "Plane und visualisiere das ganze Jahr.",
-      "mortgage_calculator": "Hypothekenrechner",
-      "mortgage_calculator_description": "Zahlungen, Zinsen und Gesamtkosten schätzen.",
       "crossword": "Kreuzworträtsel",
       "crossword_description": "Fülle das Gitter aus und löse die Hinweise.",
       "travel_expenses_tracker": "Reisekostenerfassung",
@@ -39,10 +37,6 @@
       "gantt_project_tracker_description": "Plane Aufgaben und Zeitpläne im Gantt-Diagramm.",
       "weekly_timesheet": "Wöchentlicher Stundenzettel",
       "weekly_timesheet_description": "Erfasse und überprüfe die Arbeitsstunden jeder Woche.",
-      "eu_salary_calculator": "EU-Gehaltsrechner",
-      "eu_salary_calculator_description": "Schätze das Nettogehalt nach EU-Steuern.",
-      "absence_schedule": "Abwesenheitsplan",
-      "absence_schedule_description": "Verfolge Urlaub und Abwesenheiten im Team.",
       "wordle": "Wordle",
       "wordle_description": "Errate das versteckte Wort mit fünf Buchstaben.",
       "event_calendar": "Veranstaltungskalender",
@@ -70,9 +64,6 @@
       "delete": "Arbeitsmappe löschen"
     },
     "alert": {
-      "title": "Achtung!",
-      "subtitle": "IronCalc speichert Ihre Daten nur im lokalen Speicher Ihres Browsers.",
-      "subtitle2": "<bold>Laden Sie Ihre XLSX regelmäßig herunter</bold> – zukünftige Versionen können aktuelle Arbeitsmappen möglicherweise nicht öffnen, auch wenn sie geteilt wurden.",
       "close": "Schließen"
     },
     "documentation": "Dokumentation",
@@ -86,6 +77,7 @@
   "file_bar": {
     "open_sidebar": "Seitenleiste öffnen",
     "close_sidebar": "Seitenleiste schließen",
+    "cloud_warning": "<warn>Achtung!</warn> Diese App ist ein Proof of Concept und kein fertiges Produkt. Experimentieren, teilen sowie hoch- und herunterladen Sie Modelle gerne, aber teilen oder laden Sie keine Modelle mit sensiblen oder privaten Daten hoch. Daten werden regelmäßig gelöscht.",
     "file_menu": {
       "button": "Datei",
       "new_blank_workbook": "Neue leere Arbeitsmappe",
@@ -109,17 +101,16 @@
         "confirm_button": "Ja, löschen",
         "cancel_button": "Abbrechen"
       },
-      "default_language": "Standardsprache"
+      "default_language": "Standardsprache",
+      "theme": "Design",
+      "theme_light": "Hell",
+      "theme_dark": "Dunkel"
     },
     "help_menu": {
       "button": "Hilfe",
       "about": "Über IronCalc",
       "documentation": "Dokumentation",
       "keyboard_shortcuts": "Tastaturkürzel"
-    },
-    "title_input": {
-      "warning_text1": "Diese Arbeitsmappe wird nur in Ihrem Browser gespeichert. Um sie sicher aufzubewahren, laden Sie sie als .xlsx herunter.",
-      "warning_text2": " Zukünftige Versionen könnten inkompatibel sein."
     },
     "share_popover": {
       "button": "Teilen",

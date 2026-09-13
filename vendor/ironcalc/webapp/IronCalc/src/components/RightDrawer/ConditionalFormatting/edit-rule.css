@@ -205,7 +205,7 @@
 }
 
 .ic-db-swatch-row + .ic-db-swatch-row {
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--palette-grey-200);
 }
 
 .ic-db-swatch-bar {
@@ -219,6 +219,16 @@
   flex-direction: column;
   border-radius: 3px;
   overflow: hidden;
+}
+
+.ic-db-bar-segment {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.ic-db-bar-segment + .ic-db-bar-segment {
+  border-top: 1px solid var(--palette-grey-200);
 }
 
 .ic-is-presets {
@@ -244,48 +254,6 @@
   height: 100%;
 }
 
-.ic-edit-rule-checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--typography-font-size);
-  font-family: var(--typography-font-family);
-  color: var(--palette-common-black);
-  cursor: pointer;
-  margin: 4px 0;
-}
-
-.ic-edit-rule-checkbox-row input[type="checkbox"] {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid var(--palette-grey-400);
-  border-radius: 4px;
-  background: var(--palette-common-white);
-  cursor: pointer;
-  position: relative;
-  flex-shrink: 0;
-  margin: 0;
-}
-
-.ic-edit-rule-checkbox-row input[type="checkbox"]:checked {
-  background: var(--palette-primary-main);
-  border-color: var(--palette-primary-main);
-}
-
-.ic-edit-rule-checkbox-row input[type="checkbox"]:checked::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 3px;
-  height: 6px;
-  border: 2px solid var(--palette-common-white);
-  border-top: none;
-  border-left: none;
-  transform: rotate(45deg) translate(-1px, -1px);
-}
-
 .ic-fsp-preset[aria-pressed="true"] {
   outline: 1px solid var(--palette-common-black);
   outline-offset: 1px;
@@ -293,38 +261,6 @@
 
 .ic-fsp-preset:active {
   transform: scale(0.95);
-}
-
-.ic-is-operator-group {
-  display: flex;
-  padding: 3px 3px 3px 10px;
-  width: auto;
-  gap: 2px;
-}
-
-.ic-is-operator-group--compact {
-  position: relative;
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  border: 1px solid var(--palette-grey-300);
-  border-radius: 6px;
-  background-color: var(--palette-common-white);
-  height: 32px;
-  padding: 0 1px;
-  overflow: hidden;
-  gap: 1px;
-}
-
-.ic-is-operator-group .ic-button,
-.ic-is-operator-group--compact .ic-button {
-  min-width: 0;
-  padding: 0;
-  border-radius: 4px;
-}
-
-.ic-is-mode-toggle .ic-button {
-  flex: 1;
 }
 
 .ic-is-picker-disabled {

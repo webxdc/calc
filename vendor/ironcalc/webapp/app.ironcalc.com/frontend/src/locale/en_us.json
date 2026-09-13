@@ -27,8 +27,6 @@
       "category_games": "Games",
       "yearly_calendar": "Yearly Calendar",
       "yearly_calendar_description": "Plan and visualize the full year ahead.",
-      "mortgage_calculator": "Mortgage Calculator",
-      "mortgage_calculator_description": "Estimate payments, interest, and overall cost.",
       "crossword": "Crossword",
       "crossword_description": "Fill in the grid and solve the clues.",
       "travel_expenses_tracker": "Travel Expenses Tracker",
@@ -39,10 +37,6 @@
       "gantt_project_tracker_description": "Plan tasks and timelines on a Gantt chart.",
       "weekly_timesheet": "Weekly Timesheet",
       "weekly_timesheet_description": "Log and review hours worked each week.",
-      "eu_salary_calculator": "EU Salary Calculator",
-      "eu_salary_calculator_description": "Estimate net salary after EU taxes.",
-      "absence_schedule": "Absence Schedule",
-      "absence_schedule_description": "Track team vacations and time off.",
       "wordle": "Wordle",
       "wordle_description": "Guess the hidden five-letter word.",
       "event_calendar": "Event Calendar",
@@ -70,9 +64,6 @@
       "delete": "Delete workbook"
     },
     "alert": {
-      "title": "Heads up!",
-      "subtitle": "IronCalc stores your data only in your browser's local storage.",
-      "subtitle2": "<bold>Download your XLSX often</bold> – future versions may not open current workbooks, even if shared.",
       "close": "Close"
     },
     "documentation": "Documentation",
@@ -86,6 +77,7 @@
   "file_bar": {
     "open_sidebar": "Open sidebar",
     "close_sidebar": "Close sidebar",
+    "cloud_warning": "<warn>Warning!</warn> This app is a proof of concept, not a finished product. Feel free to explore, share, and upload/download models, but don't share or upload models with sensitive or private data. Data will be deleted periodically.",
     "file_menu": {
       "button": "File",
       "new_blank_workbook": "New blank workbook",
@@ -109,17 +101,16 @@
         "confirm_button": "Yes, delete",
         "cancel_button": "Cancel"
       },
-      "default_language": "Default language"
+      "default_language": "Default language",
+      "theme": "Theme",
+      "theme_light": "Light",
+      "theme_dark": "Dark"
     },
     "help_menu": {
       "button": "Help",
       "about": "About Ironcalc",
       "documentation": "Documentation",
       "keyboard_shortcuts": "Keyboard Shortcuts"
-    },
-    "title_input": {
-      "warning_text1": "This workbook is stored only in your browser. To keep it safe, download it as .xlsx.",
-      "warning_text2": " Future versions may be incompatible."
     },
     "share_popover": {
       "button": "Share",

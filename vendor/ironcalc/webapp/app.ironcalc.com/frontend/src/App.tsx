@@ -1,7 +1,13 @@
 import "./App.css";
 import type { IronCalcHandle } from "@ironcalc/workbook";
 // From IronCalc
-import { IronCalc, IronCalcIcon, init, Model } from "@ironcalc/workbook";
+import {
+  darkThemeVariables,
+  IronCalc,
+  IronCalcIcon,
+  init,
+  Model,
+} from "@ironcalc/workbook";
 import "@ironcalc/workbook/style.css";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,8 +26,10 @@ import {
   getLanguageFromLocale,
   getShortLocaleCode,
   isStorageEmpty,
+  loadDarkModeFromStorage,
   loadDefaultLocaleFromStorage,
   loadSelectedModelFromStorage,
+  saveDarkModeInStorage,
   saveDefaultLocaleInStorage,
   saveModelToStorage,
   saveSelectedModelInStorage,
@@ -36,6 +44,7 @@ function App() {
   const [isTemplatesDialogOpen, setTemplatesDialogOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [localStorageId, setLocalStorageId] = useState<number>(1);
+  const [isDarkMode, setIsDarkMode] = useState(loadDarkModeFromStorage);
 
   const ironCalcRef = useRef<IronCalcHandle>(null);
 
@@ -48,6 +57,11 @@ function App() {
         saveSelectedModelInStorage(model);
       }
     }
+  };
+
+  const handleDarkModeChange = (isDark: boolean) => {
+    setIsDarkMode(isDark);
+    saveDarkModeInStorage(isDark);
   };
 
   const { t, i18n } = useTranslation();
@@ -69,7 +83,7 @@ function App() {
         // Get a remote model
         try {
           const model_bytes = await get_model(modelHash);
-          loadedModel = Model.from_bytes(model_bytes, languageId);
+          loadedModel = Model.fromBytes(model_bytes, languageId);
           localStorage.removeItem("selected");
         } catch (_e) {
           console.error(_e);
@@ -79,7 +93,7 @@ function App() {
       } else if (exampleFilename) {
         try {
           const model_bytes = await get_documentation_model(exampleFilename);
-          loadedModel = Model.from_bytes(model_bytes, languageId);
+          loadedModel = Model.fromBytes(model_bytes, languageId);
           localStorage.removeItem("selected");
         } catch (_e) {
           console.error(_e);
@@ -197,7 +211,7 @@ function App() {
             const bytes = new Uint8Array(await blob.arrayBuffer());
             const locale = loadDefaultLocaleFromStorage();
             const languageId = getLanguageFromLocale(locale);
-            const newModel = Model.from_bytes(bytes, languageId);
+            const newModel = Model.fromBytes(bytes, languageId);
             saveModelToStorage(newModel);
 
             setModel(newModel);
@@ -212,8 +226,14 @@ function App() {
           setIsDrawerOpen={setIsDrawerOpen}
           setLocalStorageId={setLocalStorageId}
           onLanguageChange={handleLanguageChange}
+          isDarkMode={isDarkMode}
+          onDarkModeChange={handleDarkModeChange}
         />
-        <IronCalc model={model} ref={ironCalcRef} />
+        <IronCalc
+          model={model}
+          ref={ironCalcRef}
+          themeVariables={isDarkMode ? darkThemeVariables : undefined}
+        />
         {isDrawerOpen && (
           <div
             className="app-ic-mobile-overlay"
@@ -240,7 +260,7 @@ function App() {
             const bytes = new Uint8Array(await blob.arrayBuffer());
             const locale = loadDefaultLocaleFromStorage();
             const languageId = getLanguageFromLocale(locale);
-            const newModel = Model.from_bytes(bytes, languageId);
+            const newModel = Model.fromBytes(bytes, languageId);
             saveModelToStorage(newModel);
             setModel(newModel);
           }}
@@ -255,7 +275,7 @@ function App() {
                 const model_bytes = await get_documentation_model(templateId);
                 const locale = loadDefaultLocaleFromStorage();
                 const languageId = getLanguageFromLocale(locale);
-                const importedModel = Model.from_bytes(model_bytes, languageId);
+                const importedModel = Model.fromBytes(model_bytes, languageId);
                 saveModelToStorage(importedModel);
                 setModel(importedModel);
                 break;
@@ -272,7 +292,7 @@ function App() {
           const model_bytes = await get_documentation_model(fileName);
           const locale = loadDefaultLocaleFromStorage();
           const languageId = getLanguageFromLocale(locale);
-          const importedModel = Model.from_bytes(model_bytes, languageId);
+          const importedModel = Model.fromBytes(model_bytes, languageId);
           saveModelToStorage(importedModel);
           setModel(importedModel);
           setTemplatesDialogOpen(false);

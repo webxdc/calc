@@ -4,7 +4,7 @@
 use crate::{
     cf_types::{CfRule, CfRuleInput, Cfvo, ColorScaleThreshold, Icon, ValueOperator},
     test::user_model::util::new_empty_user_model,
-    types::{Color, Dxf},
+    types::{Color, Dxf, Fill},
 };
 
 fn color_scale() -> CfRuleInput {
@@ -1033,4 +1033,190 @@ fn insert_row_updates_cfvo_formula_in_data_bar() {
     } else {
         panic!("Expected DataBar CF rule");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Multiple-areas Formula rule: parse anchor must be the top-left of the
+// bounding box of *all* areas (min row, min col), not the top-left of the
+// first area.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn multi_area_formula_anchor_is_min_row_min_col() {
+    // CF rule over two areas: "D4:D8 B10:D10".
+    // Bounding-box top-left is (row 4, col 2) = B4, even though the first
+    // area's top-left is D4 (row 4, col 4).
+    //
+    // Formula "=B4<>\"\"" written relative to anchor B4 means "this cell is
+    // non-empty": for every cell in the ranges the relative reference resolves
+    // to the cell itself.
+    //
+    // If the anchor were the first area's top-left (D4), the relative reference
+    // would be two columns to the left of the current cell. Evaluated at B10
+    // (col 2) that points at column 0, which does not exist, so B10 would never
+    // be formatted — which is the bug we are guarding against.
+    let mut model = new_empty_user_model();
+
+    // B10 is in the second area and has a value, so it must be formatted.
+    model.set_user_input(0, 10, 2, "hello").unwrap();
+
+    let format = Dxf {
+        fill: Some(Fill {
+            color: Color::Rgb("#FF0000".to_string()),
+        }),
+        ..Default::default()
+    };
+
+    model
+        .add_conditional_formatting(
+            0,
+            "D4:D8 B10:D10",
+            CfRuleInput::Formula {
+                formula: "=B4<>\"\"".to_string(),
+                format,
+                stop_if_true: false,
+            },
+        )
+        .unwrap();
+
+    // B10 has a value → its own cell is non-empty → it should be formatted.
+    assert_eq!(
+        model
+            .get_extended_cell_style(0, 10, 2)
+            .unwrap()
+            .style
+            .fill
+            .color,
+        Color::Rgb("#FF0000".to_string()),
+        "B10 has a value and must be formatted by the multi-area CF rule"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Raise / lower priority
+// ---------------------------------------------------------------------------
+
+fn data_bar_alt() -> CfRuleInput {
+    CfRuleInput::DataBar {
+        min: Some(Cfvo::Min),
+        max: Some(Cfvo::Max),
+        positive_color: Color::Rgb("#123456".to_string()),
+        negative_color: Color::Rgb("#654321".to_string()),
+        is_gradient: false,
+        show_value: false,
+    }
+}
+
+// Priorities in insertion order (not the priority-sorted display list).
+fn priorities(model: &crate::UserModel) -> Vec<u32> {
+    model
+        .model
+        .workbook
+        .worksheet(0)
+        .unwrap()
+        .conditional_formatting
+        .iter()
+        .map(|cf| cf.priority)
+        .collect()
+}
+
+#[test]
+fn test_raise_priority_swaps_with_neighbour() {
+    let mut model = new_empty_user_model();
+    model
+        .add_conditional_formatting(0, "A1:A5", color_scale())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar_alt())
+        .unwrap();
+    assert_eq!(priorities(&model), vec![1, 2, 3]);
+
+    // Raise the first rule: swaps priority 1 with priority 2.
+    model.raise_conditional_formatting_priority(0, 0).unwrap();
+    assert_eq!(priorities(&model), vec![2, 1, 3]);
+}
+
+#[test]
+fn test_lower_priority_swaps_with_neighbour() {
+    let mut model = new_empty_user_model();
+    model
+        .add_conditional_formatting(0, "A1:A5", color_scale())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar_alt())
+        .unwrap();
+    assert_eq!(priorities(&model), vec![1, 2, 3]);
+
+    // Lower the last rule: swaps priority 3 with priority 2.
+    model.lower_conditional_formatting_priority(0, 2).unwrap();
+    assert_eq!(priorities(&model), vec![1, 3, 2]);
+}
+
+#[test]
+fn test_raise_priority_at_top_is_noop_and_pushes_no_history() {
+    let mut model = new_empty_user_model();
+    model
+        .add_conditional_formatting(0, "A1:A5", color_scale())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar())
+        .unwrap();
+    assert_eq!(priorities(&model), vec![1, 2]);
+
+    // Index 1 already has the highest priority number → no-op.
+    model.raise_conditional_formatting_priority(0, 1).unwrap();
+    assert_eq!(priorities(&model), vec![1, 2]);
+
+    // No diff was recorded: undo must roll back the second add, not a swap.
+    model.undo().unwrap();
+    assert_eq!(model.get_conditional_formatting_list(0).unwrap().len(), 1);
+}
+
+#[test]
+fn test_undo_redo_raise_priority() {
+    let mut model = new_empty_user_model();
+    model
+        .add_conditional_formatting(0, "A1:A5", color_scale())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar())
+        .unwrap();
+    assert_eq!(priorities(&model), vec![1, 2]);
+
+    model.raise_conditional_formatting_priority(0, 0).unwrap();
+    assert_eq!(priorities(&model), vec![2, 1]);
+
+    // Undo restores the original priorities.
+    model.undo().unwrap();
+    assert_eq!(priorities(&model), vec![1, 2]);
+
+    // Redo re-applies the swap.
+    model.redo().unwrap();
+    assert_eq!(priorities(&model), vec![2, 1]);
+}
+
+#[test]
+fn test_undo_redo_lower_priority() {
+    let mut model = new_empty_user_model();
+    model
+        .add_conditional_formatting(0, "A1:A5", color_scale())
+        .unwrap();
+    model
+        .add_conditional_formatting(0, "A1:A5", data_bar())
+        .unwrap();
+
+    model.lower_conditional_formatting_priority(0, 1).unwrap();
+    assert_eq!(priorities(&model), vec![2, 1]);
+
+    model.undo().unwrap();
+    assert_eq!(priorities(&model), vec![1, 2]);
+
+    model.redo().unwrap();
+    assert_eq!(priorities(&model), vec![2, 1]);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@ironcalc/workbook",
-  "version": "0.7.1",
+  "version": "0.8.3",
   "type": "module",
   "sideEffects": [
     "*.css",
@@ -20,6 +20,7 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.json",
     "check": "biome check ./src ./tests .storybook/ *.ts *.json && npm run lint:i18n",
+    "typecheck": "tsc -p tsconfig.test.json",
     "check-write": "biome check --write ./src ./tests .storybook/ *.ts *.json",
     "lint:i18n": "node scripts/lint-i18n.js",
     "test": "vitest run",
@@ -27,11 +28,12 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@ironcalc/wasm": "file:../../bindings/wasm/pkg",
+    "@ironcalc/wasm": "file:../../bindings/wasm/pkg-xlsx",
     "react-colorful": "^5.6.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
+    "@napi-rs/canvas": "^1.0.7",
     "@storybook/react": "^10.4.2",
     "@storybook/react-vite": "^10.4.2",
     "@types/react": "^19.2.17",
@@ -58,5 +60,10 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ironcalc/IronCalc.git",
+    "directory": "webapp/IronCalc"
+  }
 }

@@ -85,6 +85,7 @@ pub struct Functions {
     pub index: String,
     pub indirect: String,
     pub hlookup: String,
+    pub hyperlink: String,
     pub lookup: String,
     pub r#match: String,
     pub offset: String,
@@ -391,6 +392,9 @@ pub struct Functions {
     pub coupncd: String,
     pub coupnum: String,
     pub couppcd: String,
+    pub amordegrc: String,
+    pub amorlinc: String,
+    pub vdb: String,
     pub stdevp: String,
     pub stdevs: String,
     pub stdeva: String,
@@ -454,6 +458,10 @@ pub struct Functions {
     pub steyx: String,
     pub forecast: String,
     pub forecastlinear: String,
+    pub forecastets: String,
+    pub forecastetsconfint: String,
+    pub forecastetsseasonality: String,
+    pub forecastetsstat: String,
     pub frequency: String,
     pub growth: String,
     pub linest: String,
@@ -513,6 +521,7 @@ pub struct Functions {
     pub seriessum: String,
     pub sumproduct: String,
     pub percentof: String,
+    pub encodeurl: String,
 }
 
 #[derive(Encode, Decode)]

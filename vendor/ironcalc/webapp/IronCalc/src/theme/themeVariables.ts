@@ -50,6 +50,12 @@ export interface IronCalcThemeVariables {
   "--palette-grey-a400": string;
   "--palette-grey-a700": string;
 
+  "--palette-surface-elevated": string;
+  "--palette-surface-elevated-border": string;
+
+  "--palette-input-background": string;
+  "--palette-input-border": string;
+
   "--palette-sheet-header-corner-background": string;
   "--palette-sheet-header-text-color": string;
   "--palette-sheet-header-background": string;

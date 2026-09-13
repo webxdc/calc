@@ -1,9 +1,13 @@
 allowBuilds:
   core-js: false
 
-# @ironcalc/wasm ships its wasm-bindgen snippets/ dir, but its generated
-# package.json `files` list omits it, so a `file:` install (npm-pack semantics)
-# drops snippets and the build can't resolve ./snippets/.../inline0.js.
-# Linking the dir instead keeps every file present.
+# Two things at once here.
+#
+# 1. pkg-xlsx instead of pkg: the xlsx reader/writer is gated behind the
+#    wasm crate's `xlsx` feature, so upstream emits two packages. The default
+#    one has no `toXlsx`, which the export button needs.
+# 2. `link:` instead of `file:`: a `file:` install uses npm-pack semantics and
+#    drops the wasm-bindgen `snippets/` dir, after which the build cannot
+#    resolve ./snippets/.../inline0.js. Linking keeps every file present.
 overrides:
-  "@ironcalc/wasm": "link:vendor/ironcalc/bindings/wasm/pkg"
+  "@ironcalc/wasm": "link:vendor/ironcalc/bindings/wasm/pkg-xlsx"

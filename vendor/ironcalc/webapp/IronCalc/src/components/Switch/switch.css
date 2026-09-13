@@ -1,0 +1,78 @@
+.ic-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: var(--typography-font-size);
+  font-family: var(--typography-font-family);
+  color: var(--palette-common-black);
+}
+
+.ic-switch.disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.ic-switch-label {
+  font-weight: 500;
+  transition: opacity 150ms ease;
+}
+
+.ic-switch:has(.ic-switch-input:not(:checked)) .ic-switch-label {
+  opacity: 0.5;
+}
+
+/* Visually hidden but focusable */
+.ic-switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ic-switch-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background-color: var(--palette-grey-400);
+  transition: background-color 150ms ease;
+}
+
+.ic-switch:hover .ic-switch-input:not(:disabled, :checked) + .ic-switch-track {
+  background-color: var(--palette-grey-500);
+}
+
+.ic-switch-input:checked + .ic-switch-track {
+  background-color: var(--palette-primary-main);
+}
+
+.ic-switch:hover .ic-switch-input:checked:not(:disabled) + .ic-switch-track {
+  background-color: var(--palette-primary-dark);
+}
+
+.ic-switch-input:focus-visible + .ic-switch-track {
+  outline: 2px solid var(--palette-primary-main);
+  outline-offset: 2px;
+}
+
+.ic-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--palette-common-white);
+  transition: transform 150ms ease;
+}
+
+.ic-switch-input:checked + .ic-switch-track .ic-switch-thumb {
+  transform: translateX(12px);
+}
