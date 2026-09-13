@@ -58,12 +58,16 @@ function applyEngineSettings(model: Model): Model {
   return model;
 }
 
-// Loads a stored workbook with the shared engine settings. The language is not
-// part of the serialized workbook and is passed in on every load.
+// Builds a workbook from its serialized form with the shared engine settings.
+// The language is not part of the serialized workbook and is passed in on
+// every load.
+export function modelFromBytes(bytes: Uint8Array): Model {
+  return applyEngineSettings(Model.fromBytes(bytes, ENGINE_LANGUAGE));
+}
+
+// Loads a stored workbook with the shared engine settings.
 function modelFromStoredBytes(modelBytesString: string): Model {
-  return applyEngineSettings(
-    Model.fromBytes(base64ToBytes(modelBytesString), ENGINE_LANGUAGE),
-  );
+  return modelFromBytes(base64ToBytes(modelBytesString));
 }
 
 function randomUUID(): string {
@@ -140,6 +144,12 @@ function getNewName(existingNames: string[]): string {
   }
   // FIXME: Too many workbooks?
   return `${baseName}-Infinity`;
+}
+
+export function hasGeneratedName(model: Model): boolean {
+  const baseName = i18n.t("default_workbook_name");
+  const escaped = baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped}\\d+$`).test(model.getName());
 }
 
 export function createNewModel(): Model {

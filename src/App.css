@@ -81,10 +81,10 @@ body {
   display: none;
 }
 
-/* Keep the sheet tabs clear of the export button, which is positioned over
- * the right end of the sheet tab bar (see components/ExportButton.tsx).
+/* Keep the sheet tabs clear of the file action buttons, which are positioned
+ * over the right end of the sheet tab bar (see components/FileActions.tsx).
  * The tab strip scrolls horizontally, so without this reservation the last
- * tabs would slide underneath the button. */
+ * tabs would slide underneath them. Two 44px buttons plus their 8px inset. */
 .ic-root .ic-sheet-tab-bar-sheets {
-  margin-right: 52px;
+  margin-right: 96px;
 }
