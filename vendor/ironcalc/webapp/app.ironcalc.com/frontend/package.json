@@ -1,12 +1,13 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.8.3",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check": "biome check ./src",
+    "typecheck": "tsc -b",
     "check-write": "biome check --write ./src"
   },
   "dependencies": {

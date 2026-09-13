@@ -126,6 +126,45 @@ fn test_day_arguments() {
 }
 
 #[test]
+fn test_year_booleans() {
+    let mut model = new_empty_model();
+    model._set("A1", "=YEAR(TRUE)");
+    model._set("A2", "=YEAR(FALSE)");
+
+    model.evaluate();
+
+    // We start counting from Dec 31, 1899 (serial 1)
+    assert_eq!(model._get_text("A1"), *"1899");
+    assert_eq!(model._get_text("A2"), *"#NUM!");
+}
+
+#[test]
+fn test_month_booleans() {
+    let mut model = new_empty_model();
+    model._set("A1", "=MONTH(TRUE)");
+    model._set("A2", "=MONTH(FALSE)");
+
+    model.evaluate();
+
+    // We start counting from Dec 31, 1899 (serial 1)
+    assert_eq!(model._get_text("A1"), *"12");
+    assert_eq!(model._get_text("A2"), *"#NUM!");
+}
+
+#[test]
+fn test_day_booleans() {
+    let mut model = new_empty_model();
+    model._set("A1", "=DAY(TRUE)");
+    model._set("A2", "=DAY(FALSE)");
+
+    model.evaluate();
+
+    // We start counting from Dec 31, 1899 (serial 1)
+    assert_eq!(model._get_text("A1"), *"31");
+    assert_eq!(model._get_text("A2"), *"#NUM!");
+}
+
+#[test]
 fn test_day_small_serial() {
     let mut model = new_empty_model();
     model._set("A1", "=DAY(-1)");
@@ -623,4 +662,63 @@ fn test_date_size_one_broadcast() {
     // And none of them is an error.
     assert!(matches!(v(&model, "Sheet1!B1"), CellValue::Number(_)));
     assert!(matches!(v(&model, "Sheet1!A2"), CellValue::Number(_)));
+}
+
+#[test]
+fn test_edate_function() {
+    let mut model = new_empty_model();
+
+    // Basic functionality
+    model._set("A1", "=EDATE(44561,1)"); // Add 1 month
+    model._set("A2", "=EDATE(44561,-1)"); // Subtract 1 month
+    model._set("A3", "=EDATE(44561,12)"); // Add 12 months
+
+    // Edge cases
+    model._set("A4", "=EDATE(44561,0)"); // No change
+    model._set("A5", "=EDATE(45351,12)"); // Leap day + 12 months
+    model._set("A6", "=EDATE(45351,48)"); // Leap day + 48 months
+
+    // Error cases
+    model._set("A7", "=EDATE()"); // Wrong arg count
+    model._set("A8", "=EDATE(44561,44926,5)"); // Wrong arg count
+    model._set("A9", "=EDATE(-1,1)"); // Invalid date
+    model._set("A10", "=EDATE(TRUE,1)"); // Booleans
+    model._set("A11", "=EDATE(45351,100000)"); // Beyond max date
+    model._set("A12", "=EDATE(45351,-100000)"); // Below min date
+
+    model.evaluate();
+
+    // Basic functionality (approximate values expected)
+    assert_eq!(model._get_text("A1"), *"44592");
+    assert_eq!(model._get_text("A2"), *"44530");
+    assert_eq!(model._get_text("A3"), *"44926");
+
+    // Edge cases
+    assert_eq!(model._get_text("A4"), *"44561");
+    assert_eq!(model._get_text("A5"), *"45716");
+    assert_eq!(model._get_text("A6"), *"46812");
+
+    // Error cases
+    assert_eq!(model._get_text("A7"), *"#ERROR!");
+    assert_eq!(model._get_text("A8"), *"#ERROR!");
+    assert_eq!(model._get_text("A9"), *"#NUM!");
+    assert_eq!(model._get_text("A10"), *"#VALUE!");
+    assert_eq!(model._get_text("A11"), *"#NUM!");
+    assert_eq!(model._get_text("A12"), *"#NUM!");
+}
+
+#[test]
+fn test_fn_eomonth_wrong_arguments() {
+    let mut model = new_empty_model();
+
+    // Date serial 46000: 9 Dec 2025
+    model._set("A1", "=EOMONTH()");
+    model._set("A2", "=EOMONTH(46000, 3)");
+    model._set("A3", "=EOMONTH(46000, 3, 1)");
+
+    model.evaluate();
+
+    assert_eq!(model._get_text("A1"), *"#ERROR!");
+    assert_eq!(model._get_text("A2"), *"46112");
+    assert_eq!(model._get_text("A3"), *"#ERROR!");
 }

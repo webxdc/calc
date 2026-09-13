@@ -1,6 +1,6 @@
 [package]
 name = "ironcalc_base"
-version = "0.7.1"
+version = "0.8.3"
 authors = ["Nicolás Hatcher <nicolas@theuniverse.today>"]
 edition = "2021"
 homepage = "https://www.ironcalc.com"
@@ -9,6 +9,11 @@ description = "Open source spreadsheet engine"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+# Replaces the system clock with the mock in `mock_time.rs` so dependent
+# crates can test volatile functions (NOW, TODAY, ...) deterministically.
+mock_time = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

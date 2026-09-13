@@ -9,6 +9,11 @@ use ironcalc_base::{expressions::utils::number_to_column, Model};
 use crate::export::save_to_xlsx;
 use crate::import::load_from_xlsx;
 
+use super::util::get_workbook_metadata;
+
+#[cfg(feature = "mock_time")]
+use crate::mock_time::set_mock_time_from_metadata;
+
 pub struct CompareError {
     message: String,
 }
@@ -312,37 +317,15 @@ pub(crate) fn compare_models(m1: &Model, m2: &Model) -> Result<(), String> {
     }
 }
 
-// Cheesy way to get the locale from the workbook metadata sheet
-fn get_workbook_metadata(model: &Model) -> String {
-    // let mut index = 0;
-    let mut metadata_sheet_index = None;
-    for (index, ws) in model.workbook.worksheets.iter().enumerate() {
-        if ws.name.eq_ignore_ascii_case("METADATA") {
-            metadata_sheet_index = Some(index as u32);
-            break;
-        }
-    }
-    let default_locale = "en".to_string();
-    if let Some(sheet_index) = metadata_sheet_index {
-        if let Ok(a1) = model.get_formatted_cell_value(sheet_index, 1, 1) {
-            if a1 == "Locale" {
-                match model.get_formatted_cell_value(sheet_index, 1, 2) {
-                    Ok(v) if v == "en-GB" => {
-                        return "en-GB".to_string();
-                    }
-                    _ => return default_locale,
-                }
-            }
-        }
-    }
-    default_locale
-}
-
 /// Tests that file in file_path produces the same results in Excel and in IronCalc.
 pub fn test_file(file_path: &str) -> Result<(), String> {
     // FIXME: we need to load the model twice :S
     let model1 = load_from_xlsx(file_path, "en", "UTC", "en").unwrap();
     let locale = get_workbook_metadata(&model1);
+    // Loading a model already evaluates some cells (conditional formatting),
+    // so the clock must be mocked before loading the models we compare.
+    #[cfg(feature = "mock_time")]
+    set_mock_time_from_metadata(&model1);
     let model1 = load_from_xlsx(file_path, &locale, "UTC", "en").unwrap();
     let mut model2 = load_from_xlsx(file_path, &locale, "UTC", "en").unwrap();
     model2.evaluate();
@@ -354,6 +337,10 @@ pub fn test_load_and_saving(file_path: &str, temp_dir_name: &Path) -> Result<(),
     // FIXME: we need to evaluate the model twice :S
     let model1 = load_from_xlsx(file_path, "en", "UTC", "en").unwrap();
     let locale = get_workbook_metadata(&model1);
+    // Loading a model already evaluates some cells (conditional formatting),
+    // so the clock must be mocked before loading the models we compare.
+    #[cfg(feature = "mock_time")]
+    set_mock_time_from_metadata(&model1);
 
     let model1 = load_from_xlsx(file_path, &locale, "UTC", "en").unwrap();
 

@@ -7,8 +7,8 @@ use crate::{
     cell::CellValue,
     cf_types::{
         CfCellResult, CfDataBar, CfIcon, CfRating, CfRule, CfRuleInput, Cfvo, ColorScaleThreshold,
-        ConditionalFormatting, ExtendedStyle, Icon, IconThreshold, PeriodType, TextOperator,
-        ValueOperator,
+        ConditionalFormatting, ConditionalFormattingView, ExtendedStyle, Icon, IconThreshold,
+        PeriodType, TextOperator, ValueOperator,
     },
     expressions::types::{CellReferenceIndex, CellReferenceRC},
     types::{Color, Dxf},
@@ -40,7 +40,9 @@ fn parse_range_part(s: &str) -> Option<(i32, i32, i32, i32)> {
         2 => {
             let r1 = parse_reference_a1(parts[0])?;
             let r2 = parse_reference_a1(parts[1])?;
-            Some((r1.row, r1.column, r2.row, r2.column))
+            let (row_min, row_max) = (r1.row.min(r2.row), r1.row.max(r2.row));
+            let (col_min, col_max) = (r1.column.min(r2.column), r1.column.max(r2.column));
+            Some((row_min, col_min, row_max, col_max))
         }
         _ => None,
     }
@@ -103,6 +105,17 @@ fn compute_icon_index(v: f64, thresholds: &[(f64, bool)]) -> u32 {
         }
     }
     idx
+}
+
+/// Parses a date bound of a Between/NotBetween time-period rule: either a
+/// date string in any format DATEVALUE accepts (e.g. "2025-04-25",
+/// "4/25/2025") or a plain Excel serial number.
+fn parse_cf_date_bound(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if let Ok(serial) = crate::functions::date_and_time::parse_datevalue_text(trimmed) {
+        return Some(serial as f64);
+    }
+    trimmed.parse::<f64>().ok().map(f64::floor)
 }
 
 /// Stable string key for a CellValue, used for duplicate detection.
@@ -258,11 +271,20 @@ impl<'a> Model<'a> {
             }
             CfRule::TimePeriod {
                 time_period,
+                date1,
+                date2,
                 dxf_id,
                 stop_if_true,
-                ..
             } => {
-                self.apply_cf_time_period(sheet, time_period, *dxf_id, *stop_if_true, ranges);
+                self.apply_cf_time_period(
+                    sheet,
+                    time_period,
+                    date1.as_deref(),
+                    date2.as_deref(),
+                    *dxf_id,
+                    *stop_if_true,
+                    ranges,
+                );
             }
             CfRule::IconRating {
                 icon,
@@ -756,7 +778,16 @@ impl<'a> Model<'a> {
         stop_if_true: bool,
         ranges: &[(i32, i32, i32, i32)],
     ) {
-        let Some(&(anchor_row, anchor_col, _, _)) = ranges.first() else {
+        // The parse anchor is the top-left of the bounding box of *all* areas:
+        // the minimum row and minimum column across every range. For a
+        // single-area rule this is just its top-left, but for a multiple-areas
+        // rule like "D4:D8 B10:D10" the anchor is B4 (min row 4, min col 2),
+        // not the first area's top-left (D4).
+        let Some((anchor_row, anchor_col)) = ranges
+            .iter()
+            .map(|&(r1, c1, _, _)| (r1, c1))
+            .reduce(|(r, c), (r1, c1)| (r.min(r1), c.min(c1)))
+        else {
             return;
         };
         let body = formula.trim().strip_prefix('=').unwrap_or(formula.trim());
@@ -838,10 +869,13 @@ impl<'a> Model<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_cf_time_period(
         &mut self,
         sheet: u32,
         period: &PeriodType,
+        date1: Option<&str>,
+        date2: Option<&str>,
         dxf_id: u32,
         stop_if_true: bool,
         ranges: &[(i32, i32, i32, i32)],
@@ -950,8 +984,18 @@ impl<'a> Model<'a> {
                 };
                 (serial_of(start), serial_of(end))
             }
-            PeriodType::Between | PeriodType::NotBetween => return,
+            PeriodType::Between | PeriodType::NotBetween => {
+                let (Some(d1), Some(d2)) = (date1, date2) else {
+                    return;
+                };
+                let (Some(s1), Some(s2)) = (parse_cf_date_bound(d1), parse_cf_date_bound(d2))
+                else {
+                    return;
+                };
+                (s1.min(s2), s1.max(s2))
+            }
         };
+        let negate = matches!(period, PeriodType::NotBetween);
 
         for &(r1, c1, r2, c2) in ranges {
             for row in r1..=r2 {
@@ -959,7 +1003,8 @@ impl<'a> Model<'a> {
                     if let Ok(CellValue::Number(v)) = self.get_cell_value_by_index(sheet, row, col)
                     {
                         let day = v.floor();
-                        if day >= range.0 && day <= range.1 {
+                        let inside = day >= range.0 && day <= range.1;
+                        if inside != negate {
                             self.update_cf_cache(
                                 sheet,
                                 row,
@@ -1471,23 +1516,44 @@ impl<'a> Model<'a> {
         }
     }
 
-    /// Returns all CF rules for the given sheet in list order.
+    /// Returns all CF rules for the given sheet, sorted by priority descending
+    /// (highest priority first).
+    ///
+    /// Each entry carries its `index` into the worksheet's stored
+    /// `conditional_formatting` vector so callers can pass it back to the
+    /// index-based mutators ([`Self::get_dxf_for_conditional_formatting`],
+    /// [`Self::update_conditional_formatting`], [`Self::delete_conditional_formatting`],
+    /// [`Self::raise_conditional_formatting_priority`],
+    /// [`Self::lower_conditional_formatting_priority`]) without having to infer the
+    /// index from the display position.
     ///
     /// Formulas are stored internally in English; they are translated into the
     /// active language/locale for display.
     pub fn get_conditional_formatting_list(
         &self,
         sheet: u32,
-    ) -> Result<Vec<ConditionalFormatting>, String> {
-        let mut list = self
+    ) -> Result<Vec<ConditionalFormattingView>, String> {
+        let mut list: Vec<(usize, ConditionalFormatting)> = self
             .workbook
             .worksheet(sheet)?
             .conditional_formatting
-            .clone();
-        for cf in &mut list {
+            .iter()
+            .cloned()
+            .enumerate()
+            .collect();
+        // sort by priority descending (highest first)
+        list.sort_by_key(|(_, cf)| std::cmp::Reverse(cf.priority));
+        let mut result = Vec::with_capacity(list.len());
+        for (index, mut cf) in list {
             self.cf_rule_to_display(&mut cf.cf_rule, sheet);
+            result.push(ConditionalFormattingView {
+                index,
+                range: cf.range,
+                cf_rule: cf.cf_rule,
+                priority: cf.priority,
+            });
         }
-        Ok(list)
+        Ok(result)
     }
 
     /// Returns the differential format (Dxf) for the CF rule at `index` on `sheet`,
@@ -1600,6 +1666,76 @@ impl<'a> Model<'a> {
         ws.conditional_formatting[index].range = new_range.to_string();
         ws.conditional_formatting[index].cf_rule = final_rule;
         Ok(old)
+    }
+
+    /// Raises the priority of the CF rule at `index` on `sheet`.
+    ///
+    /// In IronCalc a higher priority *number* means higher priority. Raising a
+    /// rule swaps its priority with the rule that has the next-higher priority
+    /// number (the closest rule above it). If the rule is already the
+    /// highest-priority one, this is a no-op.
+    pub fn raise_conditional_formatting_priority(
+        &mut self,
+        sheet: u32,
+        index: usize,
+    ) -> Result<(), String> {
+        let ws = self.workbook.worksheet_mut(sheet)?;
+        if index >= ws.conditional_formatting.len() {
+            return Err(format!(
+                "Conditional formatting index {index} out of bounds"
+            ));
+        }
+        let current = ws.conditional_formatting[index].priority;
+        // The neighbour is the rule with the smallest priority strictly greater
+        // than `current`.
+        let neighbour = ws
+            .conditional_formatting
+            .iter()
+            .enumerate()
+            .filter(|(_, cf)| cf.priority > current)
+            .min_by_key(|(_, cf)| cf.priority)
+            .map(|(i, _)| i);
+        if let Some(j) = neighbour {
+            let other = ws.conditional_formatting[j].priority;
+            ws.conditional_formatting[j].priority = current;
+            ws.conditional_formatting[index].priority = other;
+        }
+        Ok(())
+    }
+
+    /// Lowers the priority of the CF rule at `index` on `sheet`.
+    ///
+    /// In IronCalc a higher priority *number* means higher priority. Lowering a
+    /// rule swaps its priority with the rule that has the next-lower priority
+    /// number (the closest rule below it). If the rule is already the
+    /// lowest-priority one, this is a no-op.
+    pub fn lower_conditional_formatting_priority(
+        &mut self,
+        sheet: u32,
+        index: usize,
+    ) -> Result<(), String> {
+        let ws = self.workbook.worksheet_mut(sheet)?;
+        if index >= ws.conditional_formatting.len() {
+            return Err(format!(
+                "Conditional formatting index {index} out of bounds"
+            ));
+        }
+        let current = ws.conditional_formatting[index].priority;
+        // The neighbour is the rule with the largest priority strictly less than
+        // `current`.
+        let neighbour = ws
+            .conditional_formatting
+            .iter()
+            .enumerate()
+            .filter(|(_, cf)| cf.priority < current)
+            .max_by_key(|(_, cf)| cf.priority)
+            .map(|(i, _)| i);
+        if let Some(j) = neighbour {
+            let other = ws.conditional_formatting[j].priority;
+            ws.conditional_formatting[j].priority = current;
+            ws.conditional_formatting[index].priority = other;
+        }
+        Ok(())
     }
 
     /// Inserts a CF entry at `index` without modifying priority (used for undo/redo).

@@ -12,7 +12,7 @@ use ironcalc_base::{
         types::Area,
         utils::{column_to_number, number_to_column, quote_name as quote_name_ic},
     },
-    types::{CellType, Color, Style},
+    types::{CellType, Color, Link, Style, StyleIncludes},
     worksheet::NavigationDirection,
     BorderArea, ClipboardData, UserModel as BaseModel,
 };
@@ -136,10 +136,32 @@ impl Model {
         Ok(Model { model })
     }
 
+    #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: &[u8], language_id: &str) -> Result<Model, JsError> {
         let language_id = leak_str(language_id);
         let model = BaseModel::from_bytes(bytes, language_id).map_err(to_js_error)?;
         Ok(Model { model })
+    }
+
+    /// Loads a workbook from the bytes of an xlsx file.
+    /// Only available in `@ironcalc/wasm-xlsx`.
+    #[cfg(feature = "xlsx")]
+    #[wasm_bindgen(js_name = "fromXlsx")]
+    pub fn from_xlsx(
+        bytes: &[u8],
+        name: &str,
+        locale: &str,
+        timezone: &str,
+        language_id: &str,
+    ) -> Result<Model, JsError> {
+        let workbook = ironcalc::import::load_from_xlsx_bytes(bytes, name, locale, timezone)
+            .map_err(|e| to_js_error(e.to_string()))?;
+        let language_id = leak_str(language_id);
+        let calc_model =
+            ironcalc_base::Model::from_workbook(workbook, language_id).map_err(to_js_error)?;
+        Ok(Model {
+            model: BaseModel::from_model(calc_model),
+        })
     }
 
     pub fn undo(&mut self) -> Result<(), JsError> {
@@ -191,6 +213,49 @@ impl Model {
             .map_err(to_js_error)
     }
 
+    /// Returns completion information for a formula being edited in a cell.
+    /// `formula` is the raw cell input (it may start with `=`) and `cursor` is a
+    /// char offset into it.
+    #[wasm_bindgen(
+        js_name = "getFormulaCompletion",
+        unchecked_return_type = "CompletionContext"
+    )]
+    pub fn get_formula_completion(
+        &mut self,
+        sheet: u32,
+        row: i32,
+        column: i32,
+        formula: &str,
+        cursor: usize,
+    ) -> Result<JsValue, JsError> {
+        let context = self
+            .model
+            .formula_completion(sheet, row, column, formula, cursor)
+            .map_err(to_js_error)?;
+        serde_wasm_bindgen::to_value(&context).map_err(|e| to_js_error(e.to_string()))
+    }
+
+    /// Cycles the references touched by the cursor through the four
+    /// absolute/relative states, Excel F4 style: A1 -> $A$1 -> A$1 -> $A1 -> A1.
+    /// Returns the new text together with the new cursor start and end.
+    /// `start` and `end` are char offsets into `value`.
+    #[wasm_bindgen(
+        js_name = "cycleReference",
+        unchecked_return_type = "[string, number, number]"
+    )]
+    pub fn cycle_reference(
+        &self,
+        value: &str,
+        start: usize,
+        end: usize,
+    ) -> Result<JsValue, JsError> {
+        let result = self
+            .model
+            .cycle_reference(value, start, end)
+            .map_err(to_js_error)?;
+        serde_wasm_bindgen::to_value(&result).map_err(|e| to_js_error(e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = "newSheet")]
     pub fn new_sheet(&mut self) -> Result<(), JsError> {
         self.model.new_sheet().map_err(to_js_error)
@@ -199,6 +264,11 @@ impl Model {
     #[wasm_bindgen(js_name = "deleteSheet")]
     pub fn delete_sheet(&mut self, sheet: u32) -> Result<(), JsError> {
         self.model.delete_sheet(sheet).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "duplicateSheet")]
+    pub fn duplicate_sheet(&mut self, sheet: u32) -> Result<(), JsError> {
+        self.model.duplicate_sheet(sheet).map_err(to_js_error)
     }
 
     #[wasm_bindgen(js_name = "hideSheet")]
@@ -527,6 +597,62 @@ impl Model {
             .map_err(to_js_error)
     }
 
+    #[wasm_bindgen(js_name = "mergeCells")]
+    pub fn merge_cells(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Area")] range: JsValue,
+    ) -> Result<(), JsError> {
+        let range: Area =
+            serde_wasm_bindgen::from_value(range).map_err(|e| to_js_error(e.to_string()))?;
+        self.model.merge_cells(&range).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "mergeCellsCenter")]
+    pub fn merge_cells_center(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Area")] range: JsValue,
+    ) -> Result<(), JsError> {
+        let range: Area =
+            serde_wasm_bindgen::from_value(range).map_err(|e| to_js_error(e.to_string()))?;
+        self.model.merge_cells_center(&range).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "mergeCellsAcross")]
+    pub fn merge_cells_across(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Area")] range: JsValue,
+    ) -> Result<(), JsError> {
+        let range: Area =
+            serde_wasm_bindgen::from_value(range).map_err(|e| to_js_error(e.to_string()))?;
+        self.model.merge_cells_across(&range).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "mergeCellsDown")]
+    pub fn merge_cells_down(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Area")] range: JsValue,
+    ) -> Result<(), JsError> {
+        let range: Area =
+            serde_wasm_bindgen::from_value(range).map_err(|e| to_js_error(e.to_string()))?;
+        self.model.merge_cells_down(&range).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "unmergeCells")]
+    pub fn unmerge_cells(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Area")] range: JsValue,
+    ) -> Result<(), JsError> {
+        let range: Area =
+            serde_wasm_bindgen::from_value(range).map_err(|e| to_js_error(e.to_string()))?;
+        self.model.unmerge_cells(&range).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "getMergedCells", unchecked_return_type = "MergedCell[]")]
+    pub fn get_merged_cells(&self, sheet: u32) -> Result<JsValue, JsError> {
+        let merged_cells = self.model.get_merged_cells(sheet).map_err(to_js_error)?;
+        serde_wasm_bindgen::to_value(&merged_cells).map_err(|e| to_js_error(e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = "getCellStyle", unchecked_return_type = "ExtendedCellStyle")]
     pub fn get_cell_style(
         &mut self,
@@ -650,6 +776,56 @@ impl Model {
     #[wasm_bindgen(js_name = "getShowGridLines")]
     pub fn get_show_grid_lines(&mut self, sheet: u32) -> Result<bool, JsError> {
         self.model.get_show_grid_lines(sheet).map_err(to_js_error)
+    }
+
+    /// Returns the link attached to the cell or undefined if there isn't one.
+    #[wasm_bindgen(js_name = "getCellLink", unchecked_return_type = "Link | undefined")]
+    pub fn get_cell_link(&self, sheet: u32, row: i32, column: i32) -> Result<JsValue, JsError> {
+        let link = self
+            .model
+            .get_cell_link(sheet, row, column)
+            .map_err(to_js_error)?;
+        serde_wasm_bindgen::to_value(&link).map_err(|e| to_js_error(e.to_string()))
+    }
+
+    /// Attaches a link to a cell, replacing the existing one if there was one.
+    /// If `label` is given it becomes the content of the cell (the displayed text).
+    /// A new link also applies the link style (underline + theme hyperlink color)
+    /// to the cell. The whole operation is a single undo step.
+    #[wasm_bindgen(js_name = "setCellLink")]
+    pub fn set_cell_link(
+        &mut self,
+        sheet: u32,
+        row: i32,
+        column: i32,
+        #[wasm_bindgen(unchecked_param_type = "Link")] link: JsValue,
+        label: Option<String>,
+    ) -> Result<(), JsError> {
+        let link: Link =
+            serde_wasm_bindgen::from_value(link).map_err(|e| to_js_error(e.to_string()))?;
+        self.model
+            .set_cell_link(sheet, row, column, link, label.as_deref())
+            .map_err(to_js_error)
+    }
+
+    /// Removes the link attached to the cell. It is not an error if the cell has no link.
+    #[wasm_bindgen(js_name = "deleteCellLink")]
+    pub fn delete_cell_link(&mut self, sheet: u32, row: i32, column: i32) -> Result<(), JsError> {
+        self.model
+            .delete_cell_link(sheet, row, column)
+            .map_err(to_js_error)
+    }
+
+    /// Returns all the links in the worksheet sorted by (row, column).
+    #[wasm_bindgen(js_name = "getLinks", unchecked_return_type = "CellLink[]")]
+    pub fn get_links(&self, sheet: u32) -> Result<JsValue, JsError> {
+        let links = self.model.get_links_list(sheet).map_err(to_js_error)?;
+        // The `CellLink` entries have the link fields flattened, which serde
+        // serializes through its map machinery; the json_compatible serializer
+        // produces plain JS objects for maps instead of `Map` instances.
+        links
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| to_js_error(e.to_string()))
     }
 
     /// Sets the workbook theme.
@@ -810,6 +986,17 @@ impl Model {
     #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.model.to_bytes()
+    }
+
+    /// Serializes the workbook to xlsx bytes.
+    /// Only available in `@ironcalc/wasm-xlsx`.
+    #[cfg(feature = "xlsx")]
+    #[wasm_bindgen(js_name = "toXlsx")]
+    pub fn to_xlsx(&self) -> Result<Vec<u8>, JsError> {
+        let writer = std::io::Cursor::new(Vec::new());
+        let writer = ironcalc::export::save_xlsx_to_writer(self.model.get_model(), writer)
+            .map_err(|e| to_js_error(e.to_string()))?;
+        Ok(writer.into_inner())
     }
 
     #[wasm_bindgen(js_name = "getName")]
@@ -1021,7 +1208,7 @@ impl Model {
 
     #[wasm_bindgen(
         js_name = "getConditionalFormattingList",
-        unchecked_return_type = "ConditionalFormatting[]"
+        unchecked_return_type = "ConditionalFormattingView[]"
     )]
     pub fn get_conditional_formatting_list(&self, sheet: u32) -> Result<JsValue, JsError> {
         let list = self
@@ -1083,6 +1270,28 @@ impl Model {
             .map_err(|e| to_js_error(e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = "raiseConditionalFormattingPriority")]
+    pub fn raise_conditional_formatting_priority(
+        &mut self,
+        sheet: u32,
+        index: u32,
+    ) -> Result<(), JsError> {
+        self.model
+            .raise_conditional_formatting_priority(sheet, index)
+            .map_err(|e| to_js_error(e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "lowerConditionalFormattingPriority")]
+    pub fn lower_conditional_formatting_priority(
+        &mut self,
+        sheet: u32,
+        index: u32,
+    ) -> Result<(), JsError> {
+        self.model
+            .lower_conditional_formatting_priority(sheet, index)
+            .map_err(|e| to_js_error(e.to_string()))
+    }
+
     // Named styles
 
     #[wasm_bindgen(js_name = "getNamedStyleList", unchecked_return_type = "string[]")]
@@ -1096,16 +1305,34 @@ impl Model {
         serde_wasm_bindgen::to_value(&style).map_err(|e| to_js_error(e.to_string()))
     }
 
+    /// Returns which formatting categories the named style includes.
+    #[wasm_bindgen(
+        js_name = "getNamedStyleIncludes",
+        unchecked_return_type = "StyleIncludes"
+    )]
+    pub fn get_named_style_includes(&self, name: &str) -> Result<JsValue, JsError> {
+        let includes = self
+            .model
+            .get_named_style_includes(name)
+            .map_err(to_js_error)?;
+        serde_wasm_bindgen::to_value(&includes).map_err(|e| to_js_error(e.to_string()))
+    }
+
+    /// Creates a new named style. `includes` selects which formatting
+    /// categories the style carries.
     #[wasm_bindgen(js_name = "createNamedStyle")]
     pub fn create_named_style(
         &mut self,
         name: &str,
         #[wasm_bindgen(unchecked_param_type = "CellStyle")] style: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "StyleIncludes")] includes: JsValue,
     ) -> Result<(), JsError> {
         let style: Style =
             serde_wasm_bindgen::from_value(style).map_err(|e| to_js_error(e.to_string()))?;
+        let includes: StyleIncludes =
+            serde_wasm_bindgen::from_value(includes).map_err(|e| to_js_error(e.to_string()))?;
         self.model
-            .create_named_style(name, &style)
+            .create_named_style(name, &style, includes)
             .map_err(to_js_error)
     }
 
@@ -1120,11 +1347,14 @@ impl Model {
         name: &str,
         new_name: &str,
         #[wasm_bindgen(unchecked_param_type = "CellStyle")] style: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "StyleIncludes")] includes: JsValue,
     ) -> Result<(), JsError> {
         let style: Style =
             serde_wasm_bindgen::from_value(style).map_err(|e| to_js_error(e.to_string()))?;
+        let includes: StyleIncludes =
+            serde_wasm_bindgen::from_value(includes).map_err(|e| to_js_error(e.to_string()))?;
         self.model
-            .update_named_style(name, new_name, &style)
+            .update_named_style(name, new_name, &style, includes)
             .map_err(to_js_error)
     }
 
@@ -1154,5 +1384,10 @@ impl Model {
     #[wasm_bindgen(js_name = "onApplyNamedStyle")]
     pub fn on_apply_named_style(&mut self, name: &str) -> Result<(), JsError> {
         self.model.on_apply_named_style(name).map_err(to_js_error)
+    }
+
+    #[wasm_bindgen(js_name = "moveSheet")]
+    pub fn move_sheet(&mut self, sheet: u32, new_index: u32) -> Result<(), JsError> {
+        self.model.move_sheet(sheet, new_index).map_err(to_js_error)
     }
 }
