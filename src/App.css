@@ -56,3 +56,27 @@ body {
   font-family: var(--typography-font-family);
   font-size: var(--typography-font-size);
 }
+
+/* Hide the option to change locale settings */
+.ic-root .ic-sheet-tab-bar-right-container {
+  display: none;
+}
+
+/* Hide cut/copy/paste and their separator in the cell context menu.
+ *
+ * Only paste is really broken: IronCalc reads the system clipboard through
+ * navigator.clipboard.read(), and Delta Chat does not give webxdc apps
+ * clipboard-read permission. Cut and copy use document.execCommand, which
+ * needs no permission, but cut/copy without seems paste broken so all three go.
+ *
+ * The keyboard shortcuts still work: the browser delivers those clipboard
+ * events itself, without going through the Permissions API.
+ *
+ * This selector finds the cell menu by its submenu items and assumes
+ * cut/copy/paste are the first three entries.
+ */
+.ic-menu:has(> .ic-menu-item[aria-haspopup="menu"])
+  > .ic-menu-item:nth-child(-n + 3),
+.ic-menu:has(> .ic-menu-item[aria-haspopup="menu"]) > .ic-menu-divider {
+  display: none;
+}
