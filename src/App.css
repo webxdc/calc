@@ -81,3 +81,11 @@ body {
 .ic-menu:has(> .ic-menu-item[aria-haspopup="menu"]) > .ic-menu-divider {
   display: none;
 }
+
+/* Keep the sheet tabs clear of the export button, which is positioned over
+ * the right end of the sheet tab bar (see components/ExportButton.tsx).
+ * The tab strip scrolls horizontally, so without this reservation the last
+ * tabs would slide underneath the button. */
+.ic-root .ic-sheet-tab-bar-sheets {
+  margin-right: 52px;
+}
