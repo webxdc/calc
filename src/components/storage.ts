@@ -62,7 +62,7 @@ function applyEngineSettings(model: Model): Model {
 // part of the serialized workbook and is passed in on every load.
 function modelFromStoredBytes(modelBytesString: string): Model {
   return applyEngineSettings(
-    Model.from_bytes(base64ToBytes(modelBytesString), ENGINE_LANGUAGE),
+    Model.fromBytes(base64ToBytes(modelBytesString), ENGINE_LANGUAGE),
   );
 }
 
@@ -316,7 +316,7 @@ export function duplicateModel(uuid: string): Model | null {
   }
 
   const duplicatedModel = applyEngineSettings(
-    Model.from_bytes(originalModel.toBytes(), ENGINE_LANGUAGE),
+    Model.fromBytes(originalModel.toBytes(), ENGINE_LANGUAGE),
   );
   const models = getModelsMetadata();
   const originalName = models[uuid].name;

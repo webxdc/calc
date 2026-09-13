@@ -130,5 +130,9 @@
   },
   "loading_screen": {
     "message": "Chargement d'IronCalc"
+  },
+  "export": {
+    "send_as_xlsx": "Envoyer en .xlsx",
+    "failed": "Impossible d'exporter ce classeur au format .xlsx."
   }
 }
