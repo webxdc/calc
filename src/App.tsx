@@ -6,6 +6,7 @@ import {
   loadSelectedModelFromStorage,
   saveSelectedModelInStorage,
 } from "./components/storage";
+import ExportButton from "./components/ExportButton";
 
 // From IronCalc
 import { IronCalc, IronCalcIcon, Model, init } from "@ironcalc/workbook";
@@ -166,6 +167,7 @@ function App() {
   return (
     <Wrapper>
       <IronCalc model={model} externalRevision={externalRevision} />
+      <ExportButton model={model} />
     </Wrapper>
   );
 }
