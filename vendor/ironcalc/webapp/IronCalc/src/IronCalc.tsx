@@ -6,11 +6,18 @@ import { WorkbookState } from "./components/workbookState.ts";
 import i18n from "./i18n";
 import "./theme/theme.css";
 import "./index.css";
-import { type PartialIronCalcThemeVariables, setThemeVariables } from "./theme";
+import {
+  type PartialIronCalcThemeVariables,
+  setThemeVariables,
+  unsetThemeVariables,
+} from "./theme";
 
 interface IronCalcProperties {
   model: Model;
   themeVariables?: PartialIronCalcThemeVariables;
+  rootContainer?: HTMLElement | null;
+  /** When false, renders without the toolbar, the formula bar is read-only and all edits are blocked. */
+  canEdit?: boolean;
   // If we apply a mutation to the model from outside React
   // (e.g. applying a remote diff), we want to update the
   // canvas without throwing away the editing state. This can
@@ -23,8 +30,24 @@ export interface IronCalcHandle {
 }
 
 const IronCalc = forwardRef<IronCalcHandle, IronCalcProperties>(
-  ({ themeVariables, model, externalRevision = 0 }, ref) => {
-    const rootRef = useRef<HTMLDivElement>(null);
+  (
+    {
+      themeVariables,
+      model,
+      rootContainer,
+      canEdit = true,
+      externalRevision = 0,
+    },
+    ref,
+  ) => {
+    const root = rootContainer ?? document.body;
+    useEffect(() => {
+      if (root.classList.contains("ic-root")) {
+        console.warn("rootContainer already in use:", root);
+      }
+      root.classList.add("ic-root");
+      return () => root.classList.remove("ic-root");
+    }, [root]);
 
     // We keep WorkbookState and the model as a ref, so that
     // it survives re-rendering this component.
@@ -38,10 +61,11 @@ const IronCalc = forwardRef<IronCalcHandle, IronCalcProperties>(
     const workbookState = workbook.current.state;
 
     useEffect(() => {
-      if (rootRef.current && themeVariables) {
-        setThemeVariables(themeVariables, rootRef.current);
+      if (themeVariables) {
+        setThemeVariables(themeVariables, root);
+        return () => unsetThemeVariables(root);
       }
-    }, [themeVariables]);
+    }, [root, themeVariables]);
 
     useImperativeHandle(ref, () => ({
       setLanguage(language: string) {
@@ -54,11 +78,12 @@ const IronCalc = forwardRef<IronCalcHandle, IronCalcProperties>(
     }));
 
     return (
-      <div ref={rootRef} className="ic-root">
+      <div className="ic-widget">
         <I18nextProvider i18n={i18n}>
           <Workbook
             model={model}
             workbookState={workbookState}
+            canEdit={canEdit}
             externalRevision={externalRevision}
           />
         </I18nextProvider>

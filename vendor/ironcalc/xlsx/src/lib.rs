@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! ironcalc = { git = "https://github.com/ironcalc/IronCalc", tag = "v0.5.0" }
+//! ironcalc = { git = "https://github.com/ironcalc/IronCalc", tag = "v0.8.3" }
 //! ```
 //!
 //! A simple example with some numbers, a new sheet and a formula:
@@ -47,4 +47,8 @@ pub mod compare;
 pub mod error;
 pub mod export;
 pub mod import;
+pub mod util;
 pub use ironcalc_base as base;
+
+#[cfg(feature = "mock_time")]
+pub mod mock_time;

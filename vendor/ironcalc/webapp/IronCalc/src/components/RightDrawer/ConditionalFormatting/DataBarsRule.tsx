@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../Button/Button";
 import { IconButton } from "../../Button/IconButton";
+import { Checkbox } from "../../Checkbox/Checkbox";
 import ColorPicker from "../../ColorPicker/ColorPicker";
 import { resolveColorToHex } from "../../ColorPicker/util";
 import { Input } from "../../Input/Input";
@@ -78,16 +79,8 @@ export const DataBarMiniChart = ({
     : color;
   return (
     <div className="ic-db-mini-chart">
-      {BAR_WIDTHS.map((w, i) => (
-        <div
-          key={w}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            borderTop: i > 0 ? "1px solid #e0e0e0" : undefined,
-          }}
-        >
+      {BAR_WIDTHS.map((w) => (
+        <div key={w} className="ic-db-bar-segment">
           <div
             style={{
               width: `${w * 100}%`,
@@ -468,19 +461,16 @@ const DataBarsRule = ({
             <div className="ic-edit-rule-label">
               {t("conditional_formatting.data_bars_preferences")}
             </div>
-            <label className="ic-edit-rule-checkbox-row">
-              <input
-                type="checkbox"
-                checked={!selected.hideCellContent}
-                onChange={(e) =>
-                  setSelected((s) => ({
-                    ...s,
-                    hideCellContent: !e.target.checked,
-                  }))
-                }
-              />
-              {t("conditional_formatting.data_bars_show_value")}
-            </label>
+            <Checkbox
+              checked={!selected.hideCellContent}
+              onChange={(checked) =>
+                setSelected((s) => ({
+                  ...s,
+                  hideCellContent: !checked,
+                }))
+              }
+              label={t("conditional_formatting.data_bars_show_value")}
+            />
           </div>
         </div>
       </div>

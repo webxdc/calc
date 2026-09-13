@@ -88,6 +88,18 @@ export function loadDefaultLocaleFromStorage(): string {
   return l;
 }
 
+export function saveDarkModeInStorage(isDark: boolean) {
+  localStorage.setItem("dark_mode", isDark ? "true" : "false");
+}
+
+export function loadDarkModeFromStorage(): boolean {
+  const stored = localStorage.getItem("dark_mode");
+  if (stored) {
+    return stored === "true";
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
 export function updateNameSelectedWorkbook(model: Model, newName: string) {
   const uuid = localStorage.getItem("selected");
   if (uuid) {
@@ -176,7 +188,7 @@ export function loadSelectedModelFromStorage(): Model | null {
       const modelBytesString = localStorage.getItem(uuid);
       const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
       if (modelBytesString) {
-        return Model.from_bytes(base64ToBytes(modelBytesString), language);
+        return Model.fromBytes(base64ToBytes(modelBytesString), language);
       }
     }
     return null;
@@ -237,7 +249,7 @@ export function selectModelFromStorage(uuid: string): Model | null {
   const modelBytesString = localStorage.getItem(uuid);
   const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
   if (modelBytesString) {
-    return Model.from_bytes(base64ToBytes(modelBytesString), language);
+    return Model.fromBytes(base64ToBytes(modelBytesString), language);
   }
   return null;
 }
@@ -294,7 +306,7 @@ export function deleteModelByUuid(uuid: string): Model | null {
     const modelBytesString = localStorage.getItem(selectedUuid);
     const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
     if (modelBytesString) {
-      return Model.from_bytes(base64ToBytes(modelBytesString), language);
+      return Model.fromBytes(base64ToBytes(modelBytesString), language);
     }
   }
 
@@ -322,7 +334,7 @@ export function duplicateModel(uuid: string): Model | null {
   }
 
   const language = originalModel.getLanguage();
-  const duplicatedModel = Model.from_bytes(originalModel.toBytes(), language);
+  const duplicatedModel = Model.fromBytes(originalModel.toBytes(), language);
   const models = getModelsMetadata();
   const originalName = models[uuid].name;
   const existingNames = Object.values(models).map((m) => m.name);

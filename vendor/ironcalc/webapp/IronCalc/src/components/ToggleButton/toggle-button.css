@@ -1,0 +1,64 @@
+.ic-toggle-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: fit-content;
+  border-radius: 6px;
+  background-color: var(--palette-grey-50);
+  outline: 1px solid var(--palette-grey-300);
+  outline-offset: -1px;
+}
+
+.ic-toggle-button .ic-button.ic-button--ghost {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.ic-toggle-button .ic-button--ghost:not(:disabled)[aria-pressed="true"] {
+  background-color: var(--palette-common-white);
+  box-shadow: 0 1px 2px var(--black-12);
+  border-color: var(--palette-grey-400);
+}
+
+/* Focus opts out: opacity would dim the focus ring along with the button. */
+.ic-toggle-button .ic-button:not([aria-pressed="true"], :focus-visible) {
+  opacity: 0.5;
+}
+
+.ic-toggle-button
+  .ic-button--ghost:not([aria-pressed="true"], :disabled):hover {
+  background-color: transparent;
+  opacity: 1;
+}
+
+.ic-toggle-button .ic-button:not(.ic-button--icon-only) {
+  padding: 0 8px;
+}
+
+/* Only `multiple` can select two options at once. Adjacent ones are drawn as a
+   single run: square the shared edge and let the left button's border do the
+   work of both. Colors only, so the group's width never changes. */
+.ic-toggle-button
+.ic-button[aria-pressed="true"]:has(+ .ic-button[aria-pressed="true"]) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.ic-toggle-button
+  .ic-button[aria-pressed="true"]
+  + .ic-button[aria-pressed="true"] {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start-color: transparent;
+}
+
+.ic-toggle-button--full-width {
+  display: flex;
+  width: 100%;
+}
+
+.ic-toggle-button--full-width .ic-button {
+  flex: 1;
+}

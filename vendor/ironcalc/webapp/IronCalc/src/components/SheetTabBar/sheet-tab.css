@@ -8,6 +8,7 @@
   cursor: pointer;
   border-bottom: 3px solid transparent;
   font-weight: 400;
+  color: var(--palette-common-black);
 }
 
 .ic-sheet-tab--selected {
@@ -16,7 +17,7 @@
 }
 
 .ic-sheet-tab:hover {
-  background-color: rgb(245 245 245 / 50%);
+  background-color: var(--palette-grey-200);
 }
 
 .ic-sheet-tab-name {
@@ -46,7 +47,7 @@
 }
 
 .ic-sheet-tab-menu-button:hover {
-  background-color: var(--palette-grey-200);
+  background-color: var(--palette-grey-300);
 }
 
 .ic-sheet-tab-menu-button:active,
@@ -98,4 +99,10 @@
 .ic-sheet-tab-input:focus {
   outline: none;
   border-color: var(--palette-primary-main);
+}
+
+@media (max-width: 769px) {
+  .ic-sheet-tab {
+    margin-right: 4px;
+  }
 }

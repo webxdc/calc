@@ -4,10 +4,7 @@ import { useState } from "react";
 import { Fx } from "../../icons";
 import { Button } from "../Button/Button";
 import Editor from "../Editor/Editor";
-import {
-  COLUMN_WIDTH_SCALE,
-  ROW_HEIGH_SCALE,
-} from "../WorksheetCanvas/constants";
+import { getEditorSize } from "../util";
 import type { WorkbookState } from "../workbookState";
 import FormulaBarMenu from "./FormulaBarMenu";
 import "./formula-bar.css";
@@ -65,19 +62,25 @@ function FormulaBar(properties: FormulaBarProps) {
         <div className="ic-formula-bar-button">
           <Fx />
         </div>
-        {/** biome-ignore lint/a11y/noStaticElementInteractions: FIXME */}
-        {/** biome-ignore lint/a11y/useKeyWithClickEvents: FIXME */}
         <div
           className="ic-formula-bar-editor-wrapper"
-          onClick={(event) => {
+          // Start editing on pointerdown, not click: clicking *in the middle*
+          // of existing text does not emit a `click` event (only clicking past
+          // the end does), so an onClick here never fires for mid-text clicks.
+          // Also no preventDefault() — on pointerdown that would cancel the
+          // textarea's focus/caret placement, so the first click would set the
+          // editing cell but never focus the editor.
+          onPointerDown={(event) => {
             if (!properties.canEdit) {
               return;
             }
             const [sheet, row, column] = model.getSelectedCell();
-            const editorWidth =
-              model.getColumnWidth(sheet, column) * COLUMN_WIDTH_SCALE;
-            const editorHeight =
-              model.getRowHeight(sheet, row) * ROW_HEIGH_SCALE;
+            const { width: editorWidth, height: editorHeight } = getEditorSize(
+              model,
+              sheet,
+              row,
+              column,
+            );
             workbookState.setEditingCell({
               sheet,
               row,
@@ -93,7 +96,6 @@ function FormulaBar(properties: FormulaBarProps) {
               editorHeight,
             });
             event.stopPropagation();
-            event.preventDefault();
           }}
         >
           <Editor

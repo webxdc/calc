@@ -5,7 +5,12 @@
   background: var(--palette-sheet-outline-color);
   cursor: crosshair;
   border-radius: 1px;
-  border: 1px solid white;
+  border: 1px solid var(--palette-common-white);
+}
+
+/* The handle auto-fills (drags) cell content, so it is an edit affordance. */
+.ic-workbook-container--readonly .ironcalc-cell-handle {
+  display: none;
 }
 
 /* Spacer */
@@ -130,7 +135,7 @@
   border: 2px solid var(--palette-sheet-outline-color);
   border-radius: 3px;
   word-break: break-word;
-  font-size: 13px;
+  font-size: 12px;
   display: flex;
   box-shadow: inset 0 0 0 1px var(--palette-common-white);
 }
@@ -140,6 +145,96 @@
   position: absolute;
   border: 1px dashed var(--palette-sheet-outline-color);
   border-radius: 3px;
+}
+
+/* Link hover tooltip */
+.ic-worksheet-link-tooltip {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px 2px 2px 6px;
+  border-radius: 4px;
+  background-color: color-mix(
+    in srgb,
+    var(--palette-grey-900) 94%,
+    transparent
+  );
+  color: var(--palette-common-white);
+  font-size: var(--typography-font-size);
+  font-family: var(--typography-font-family);
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+
+.ic-worksheet-link-tooltip svg {
+  width: 1em;
+  height: 1em;
+}
+
+.ic-worksheet-link-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The optional descriptive text of the link, below the label and actions */
+.ic-worksheet-link-tooltip-text {
+  color: var(--palette-grey-400);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0px 4px 2px 0px;
+}
+
+.ic-worksheet-link-tooltip-icon {
+  display: flex;
+  align-items: center;
+  color: var(--palette-grey-400);
+}
+
+.ic-worksheet-link-tooltip-label {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ic-worksheet-link-tooltip-label:hover {
+  text-decoration: underline;
+}
+
+.ic-worksheet-link-tooltip-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.ic-worksheet-link-tooltip-button {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: 0;
+  color: var(--palette-grey-400);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.ic-worksheet-link-tooltip-button:hover {
+  color: var(--palette-common-white);
+  background-color: var(--palette-grey-800);
 }
 
 /* Editor wrapper */
