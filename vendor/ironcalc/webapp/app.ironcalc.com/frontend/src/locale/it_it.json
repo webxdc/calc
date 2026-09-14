@@ -14,7 +14,7 @@
     "new": "Nuovo",
     "blank_workbook": "Cartella di lavoro vuota",
     "import_workbook": "Importa cartella di lavoro",
-    "storage_warning": "<warn>Attenzione!</warn> Questa applicazione è una prova di concetto e non un prodotto finito. Sentiti libero di esplorare, condividere e caricare/scaricare modelli, ma non condividere o caricare modelli con dati sensibili o privati. I dati verranno eliminati periodicamente. <docsLink>Scopri di più</docsLink>",
+    "storage_warning": "<warn>Attenzione!</warn> Questa applicazione è una prova di concetto e non un prodotto finito. Puoi esplorare, condividere e caricare/scaricare modelli, ma non condividere o caricare modelli con dati sensibili o privati. I dati verranno eliminati periodicamente. <docsLink>Scopri di più</docsLink>",
     "templates": {
       "choose_template": "Scegli un modello",
       "templates": "Modelli",
@@ -27,8 +27,6 @@
       "category_games": "Giochi",
       "yearly_calendar": "Calendario annuale",
       "yearly_calendar_description": "Pianifica e visualizza l'intero anno.",
-      "mortgage_calculator": "Calcolatore mutuo",
-      "mortgage_calculator_description": "Stima pagamenti, interessi e costo totale.",
       "crossword": "Cruciverba",
       "crossword_description": "Completa la griglia e risolvi le definizioni.",
       "travel_expenses_tracker": "Tracciamento spese di viaggio",
@@ -39,10 +37,6 @@
       "gantt_project_tracker_description": "Pianifica attività e scadenze su un diagramma di Gantt.",
       "weekly_timesheet": "Foglio ore settimanale",
       "weekly_timesheet_description": "Registra e controlla le ore lavorate ogni settimana.",
-      "eu_salary_calculator": "Calcolatore stipendio UE",
-      "eu_salary_calculator_description": "Stima lo stipendio netto dopo le tasse UE.",
-      "absence_schedule": "Calendario assenze",
-      "absence_schedule_description": "Tieni traccia di ferie e assenze del team.",
       "wordle": "Wordle",
       "wordle_description": "Indovina la parola nascosta di cinque lettere.",
       "event_calendar": "Calendario eventi",
@@ -70,9 +64,6 @@
       "delete": "Elimina cartella di lavoro"
     },
     "alert": {
-      "title": "Attenzione!",
-      "subtitle": "IronCalc memorizza i tuoi dati solo nella memoria locale del browser.",
-      "subtitle2": "<bold>Scarica spesso il tuo XLSX</bold> – le versioni future potrebbero non aprire le cartelle di lavoro attuali, anche se condivise.",
       "close": "Chiudi"
     },
     "documentation": "Documentazione",
@@ -86,6 +77,7 @@
   "file_bar": {
     "open_sidebar": "Apri barra laterale",
     "close_sidebar": "Chiudi barra laterale",
+    "cloud_warning": "<warn>Attenzione!</warn> Questa applicazione è una prova di concetto e non un prodotto finito. Sentiti libero di esplorare, condividere e caricare/scaricare modelli, ma non condividere o caricare modelli con dati sensibili o privati. I dati verranno eliminati periodicamente.",
     "file_menu": {
       "button": "File",
       "new_blank_workbook": "Nuova cartella di lavoro vuota",
@@ -109,17 +101,16 @@
         "confirm_button": "Sì, elimina",
         "cancel_button": "Annulla"
       },
-      "default_language": "Lingua predefinita"
+      "default_language": "Lingua predefinita",
+      "theme": "Tema",
+      "theme_light": "Chiaro",
+      "theme_dark": "Scuro"
     },
     "help_menu": {
       "button": "Aiuto",
       "about": "Informazioni su IronCalc",
       "documentation": "Documentazione",
       "keyboard_shortcuts": "Scorciatoie da tastiera"
-    },
-    "title_input": {
-      "warning_text1": "Questa cartella di lavoro è memorizzata solo nel tuo browser. Per tenerla al sicuro, scaricala come .xlsx.",
-      "warning_text2": " Le versioni future potrebbero essere incompatibili."
     },
     "share_popover": {
       "button": "Condividi",

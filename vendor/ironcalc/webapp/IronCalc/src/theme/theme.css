@@ -1,4 +1,4 @@
-:root {
+.ic-root {
   /* typography */
   --typography-font-family: "Inter";
   --typography-font-size: 12px;
@@ -58,6 +58,14 @@
   --palette-grey-a200: #eeeeee;
   --palette-grey-a400: #bdbdbd;
   --palette-grey-a700: #616161;
+
+  /* elevated surfaces (menus, modals) */
+  --palette-surface-elevated: #fff;
+  --palette-surface-elevated-border: transparent;
+
+  /* inputs (selects, text fields) */
+  --palette-input-background: #fff;
+  --palette-input-border: #e0e0e0;
 
   /* shadows */
   --shadow-sm: 0px 1px 3px 0px rgb(39 37 37 / 10%);

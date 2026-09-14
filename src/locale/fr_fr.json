@@ -130,5 +130,13 @@
   },
   "loading_screen": {
     "message": "Chargement d'IronCalc"
+  },
+  "export": {
+    "send_as_xlsx": "Envoyer en .xlsx",
+    "failed": "Impossible d'exporter ce classeur au format .xlsx."
+  },
+  "import": {
+    "add_sheets": "Ajouter des feuilles depuis .xlsx",
+    "failed": "Impossible de lire ce fichier comme un tableur."
   }
 }

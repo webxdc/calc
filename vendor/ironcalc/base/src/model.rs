@@ -17,7 +17,7 @@ use crate::{
             stringify::{
                 rename_defined_name_in_node, to_english_string, to_localized_string, to_rc_format,
             },
-            ArrayNode, NamedVariable, Node, Parser,
+            ArrayNode, CompletionContext, NamedVariable, Node, Parser,
         },
         token::{get_error_by_name, Error, OpProduct, OpSum, OpUnary},
         types::*,
@@ -36,7 +36,7 @@ use crate::{
 
 use crate::{cf_types::CfCellResult, tz::Tz};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mock_time"))]
 pub use crate::mock_time::get_milliseconds_since_epoch;
 
 /// Number of milliseconds since January 1, 1970
@@ -44,7 +44,7 @@ pub use crate::mock_time::get_milliseconds_since_epoch;
 /// * The Operative System
 /// * The JavaScript environment
 /// * Or mocked for tests
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "mock_time")))]
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::expect_used)]
 pub fn get_milliseconds_since_epoch() -> i64 {
@@ -60,7 +60,7 @@ pub fn get_milliseconds_since_epoch() -> i64 {
 /// * The Operative System
 /// * The JavaScript environment
 /// * Or mocked for tests
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "mock_time")))]
 #[cfg(target_arch = "wasm32")]
 pub fn get_milliseconds_since_epoch() -> i64 {
     use js_sys::Date;
@@ -223,6 +223,8 @@ pub struct Model<'a> {
     /// Evaluated CF results per cell, keyed by (sheet_index, row, column).
     /// Rebuilt from scratch on every call to evaluate_conditional_formatting().
     pub(crate) cf_cache: HashMap<(u32, i32, i32), Vec<CfCellResult>>,
+    /// Dynamic links: links created by formulas like HYPERLINK
+    pub(crate) links: HashMap<(u32, i32, i32), Link>,
 }
 
 // FIXME: Maybe this should be the same as CellReference
@@ -336,12 +338,18 @@ impl<'a> Model<'a> {
                 automatic: _,
                 child,
             } => match self.evaluate_node_with_reference(child, cell) {
-                CalcResult::Range { left, right } => CalcResult::Range { left, right },
-                _ => CalcResult::new_error(
-                    Error::ERROR,
-                    cell,
-                    format!("Error with Implicit Intersection in cell {cell:?}"),
-                ),
+                CalcResult::Range { left, right } => {
+                    match implicit_intersection(&cell, &Range { left, right }) {
+                        Some(r) => CalcResult::Range { left: r, right: r },
+                        None => CalcResult::new_error(
+                            Error::VALUE,
+                            cell,
+                            format!("Error with Implicit Intersection in cell {cell:?}"),
+                        ),
+                    }
+                }
+                // The implicit intersection of a scalar is the scalar itself.
+                other => other,
             },
             _ => self.evaluate_node_in_context(node, cell),
         }
@@ -382,6 +390,29 @@ impl<'a> Model<'a> {
                 origin: cell,
                 message: "Invalid range".to_string(),
             },
+        }
+    }
+
+    /// Collapses a reference-context result to a value: a Range is implicitly
+    /// intersected at `cell` and the intersected cell evaluated; anything else
+    /// (scalar, array, error) passes through unchanged.
+    pub(crate) fn implicit_intersection_to_value(
+        &mut self,
+        result: CalcResult,
+        cell: CellReferenceIndex,
+    ) -> CalcResult {
+        match result {
+            CalcResult::Range { left, right } => {
+                match implicit_intersection(&cell, &Range { left, right }) {
+                    Some(cell_reference) => self.evaluate_cell(cell_reference),
+                    None => CalcResult::new_error(
+                        Error::VALUE,
+                        cell,
+                        format!("Error with Implicit Intersection in cell {cell:?}"),
+                    ),
+                }
+            }
+            other => other,
         }
     }
 
@@ -453,6 +484,35 @@ impl<'a> Model<'a> {
         } else {
             english
         })
+    }
+
+    /// Returns completion information for a formula being edited in a cell.
+    ///
+    /// `formula` is the raw cell input (it may start with `=`) and `cursor` is a
+    /// char offset into it. The references in the formula are resolved relative
+    /// to the cell at (`sheet`, `row`, `column`). See
+    /// [`CompletionContext`](crate::expressions::parser::CompletionContext).
+    pub fn formula_completion(
+        &mut self,
+        sheet: u32,
+        row: i32,
+        column: i32,
+        formula: &str,
+        cursor: usize,
+    ) -> Result<CompletionContext, String> {
+        let sheet_name = self.workbook.worksheet(sheet)?.get_name();
+        let cell_reference = CellReferenceRC {
+            sheet: sheet_name,
+            row,
+            column,
+        };
+        // The parser works on the formula body, without the leading `=`. Drop it
+        // and shift the cursor so it keeps pointing at the same character.
+        let (body, cursor) = match formula.strip_prefix('=') {
+            Some(rest) => (rest, cursor.saturating_sub(1)),
+            None => (formula, cursor),
+        };
+        Ok(self.parser.parse_at_cursor(body, cursor, &cell_reference))
     }
 
     /// Translates an internally-stored (English) formula into the active
@@ -741,9 +801,7 @@ impl<'a> Model<'a> {
             }
             ErrorKind(kind) => CalcResult::new_error(kind.clone(), cell, "".to_string()),
             ParseErrorKind {
-                formula,
-                message,
-                position: _,
+                formula, message, ..
             } => CalcResult::new_error(
                 Error::ERROR,
                 cell,
@@ -798,19 +856,10 @@ impl<'a> Model<'a> {
             ImplicitIntersection {
                 automatic: _,
                 child,
-            } => match self.evaluate_node_with_reference(child, cell) {
-                CalcResult::Range { left, right } => {
-                    match implicit_intersection(&cell, &Range { left, right }) {
-                        Some(cell_reference) => self.evaluate_cell(cell_reference),
-                        None => CalcResult::new_error(
-                            Error::VALUE,
-                            cell,
-                            format!("Error with Implicit Intersection in cell {cell:?}"),
-                        ),
-                    }
-                }
-                _ => self.evaluate_node_in_context(child, cell),
-            },
+            } => {
+                let result = self.evaluate_node_with_reference(child, cell);
+                self.implicit_intersection_to_value(result, cell)
+            }
             LambdaDefKind { parameters, body } => {
                 let id = self.get_next_lambda_id();
                 self.lambdas.insert(id, (parameters.clone(), *body.clone()));
@@ -916,12 +965,25 @@ impl<'a> Model<'a> {
                     }
                     // Check that the full spill area (based on actual result dimensions) is clear.
                     // The stored range may be (1,1) on first evaluation, so we must re-check here.
-                    let sheet_data = &self.workbook.worksheets[sheet as usize].sheet_data;
+                    let target_worksheet = &self.workbook.worksheets[sheet as usize];
+                    let sheet_data = &target_worksheet.sheet_data;
                     for r in row..row + array_height {
                         let row_data = sheet_data.get(&r);
                         for c in column..column + array_width {
                             if r == row && c == column {
                                 continue;
+                            }
+                            // Merged cells always block spilling.
+                            if target_worksheet.merged_cell_containing(r, c).is_some() {
+                                return self.set_cells_with_result(
+                                    cell_reference,
+                                    cell,
+                                    &CalcResult::new_error(
+                                        Error::SPILL,
+                                        cell_reference,
+                                        "Cannot spill array result".to_string(),
+                                    ),
+                                );
                             }
                             // A cell blocks spilling only if it is occupied by something
                             // other than an empty cell or a spill cell that already belongs
@@ -1692,6 +1754,7 @@ impl<'a> Model<'a> {
             spill_cells: Vec::new(),
             support: HashMap::new(),
             cf_cache: HashMap::new(),
+            links: HashMap::new(),
         };
 
         model.parse_formulas();
@@ -2074,20 +2137,18 @@ impl<'a> Model<'a> {
         value: &str,
     ) -> Result<(), String> {
         let style_index = self.get_cell_style_index(sheet, row, column)?;
-        let new_style_index;
-        if common::value_needs_quoting(value, self.language) {
-            new_style_index = self
-                .workbook
+
+        let new_style_index = if common::value_needs_quoting(value, self.language) {
+            self.workbook
                 .styles
-                .get_style_with_quote_prefix(style_index)?;
+                .get_style_with_quote_prefix(style_index)?
         } else if self.workbook.styles.style_is_quote_prefix(style_index) {
-            new_style_index = self
-                .workbook
+            self.workbook
                 .styles
-                .get_style_without_quote_prefix(style_index)?;
+                .get_style_without_quote_prefix(style_index)?
         } else {
-            new_style_index = style_index;
-        }
+            style_index
+        };
 
         self.set_cell_with_string(sheet, row, column, value, new_style_index)
     }
@@ -2233,12 +2294,15 @@ impl<'a> Model<'a> {
     // - Part of a dynamic array formula => we delete the formula and we clear the spill
     // - Anchor of a dynamic array formula
     //     => we clear the spill and we set an unevaluated dynamic formula.
-    fn prepare_cell_for_user_input(
+    pub(crate) fn prepare_cell_for_user_input(
         &mut self,
         sheet: u32,
         row: i32,
         column: i32,
     ) -> Result<(), String> {
+        if self.workbook.worksheet(sheet)?.is_covered_cell(row, column) {
+            return Err("Cannot edit a cell that is part of a merged cell".to_string());
+        }
         match self.get_cell_structure(sheet, row, column)? {
             CellStructure::SingleCell => {
                 // noop
@@ -2347,9 +2411,11 @@ impl<'a> Model<'a> {
         // first we make sure we can write in the cell and clear the spills.
         self.prepare_cell_for_user_input(sheet, row, column)?;
         if value.is_empty() {
-            // If the value is empty we just clear the cell
+            // If the value is empty we just clear the cell.
+            // Deleting the contents of a cell also removes its link.
             let ws = self.workbook.worksheet_mut(sheet)?;
             ws.cell_clear_contents(row, column)?;
+            ws.links.remove(&(row, column));
             return Ok(());
         }
 
@@ -2428,6 +2494,10 @@ impl<'a> Model<'a> {
                     }
                     None => {
                         self.set_cell_with_string(sheet, row, column, &value, new_style_index)?;
+                        // If the input looks like an URL or an email address a link is
+                        // attached to the cell, the same way other inputs change the
+                        // number format. Note that a quote prefix prevents this.
+                        self.auto_link_cell(sheet, row, column, &value)?;
                     }
                 }
             }
@@ -2445,6 +2515,15 @@ impl<'a> Model<'a> {
         height: i32,
         value: &str,
     ) -> Result<(), String> {
+        if self
+            .workbook
+            .worksheet(sheet)?
+            .merged_cells
+            .iter()
+            .any(|m| m.intersects(row, column, width, height))
+        {
+            return Err("Cannot set an array formula over merged cells".to_string());
+        }
         self.prepare_cell_for_user_input(sheet, row, column)?;
         // If value starts with "'" then we force the style to be quote_prefix
         let style_index = self.get_cell_style_index(sheet, row, column)?;
@@ -3010,6 +3089,8 @@ impl<'a> Model<'a> {
             retry = false;
             self.cells.clear();
             self.support.clear();
+            // dynamic links (HYPERLINK) are rebuilt on every evaluation
+            self.links.clear();
             self.clear_variable_stack();
             self.clear_lambdas();
 
@@ -3105,6 +3186,13 @@ impl<'a> Model<'a> {
                 }
             }
         }
+        // Deleting the contents of a cell also removes its link
+        ws.links.retain(|&(row, column), _| {
+            row < range.row
+                || row >= range.row + range.height
+                || column < range.column
+                || column >= range.column + range.width
+        });
         Ok(())
     }
 
@@ -3212,6 +3300,13 @@ impl<'a> Model<'a> {
             // we ignore errors here because the cell might have already been cleared as part of an array formula
             let _ = worksheet.cell_clear_contents(row, column);
         }
+        // Deleting the cells also removes their links
+        worksheet.links.retain(|&(row, column), _| {
+            row < area.row
+                || row >= area.row + area.height
+                || column < area.column
+                || column >= area.column + area.width
+        });
         Ok(())
     }
 
@@ -3511,7 +3606,7 @@ impl<'a> Model<'a> {
 
     /// The context used to parse/stringify defined-name formulas. Defined names
     /// have no natural anchor cell, so we use the first worksheet's A1.
-    fn defined_name_context(&self) -> CellReferenceRC {
+    pub(crate) fn defined_name_context(&self) -> CellReferenceRC {
         CellReferenceRC {
             sheet: self
                 .workbook
@@ -3783,7 +3878,7 @@ impl<'a> Model<'a> {
     pub fn set_timezone(&mut self, timezone: &str) -> Result<(), String> {
         let tz = match Tz::parse(timezone) {
             Ok(tz) => tz,
-            Err(_) => return Err(format!("Invalid timezone: {}", &timezone)),
+            Err(_) => return Err(format!("Invalid timezone: {}", timezone)),
         };
         self.tz = tz;
         self.workbook.settings.tz = timezone.to_string();
@@ -3849,6 +3944,26 @@ impl<'a> Model<'a> {
             number_fmt,
             number_example,
         }
+    }
+
+    /// Cycles the references touched by the cursor through the four
+    /// absolute/relative states, Excel F4 style: A1 -> $A$1 -> A$1 -> $A1 -> A1.
+    /// Returns the new text together with the new cursor start and end.
+    ///
+    /// Given cycle_reference("=A1", 3, 3) returns ("=$A$1", 5, 5)
+    pub fn cycle_reference(
+        &self,
+        value: &str,
+        start: usize,
+        end: usize,
+    ) -> Result<(String, i32, i32), String> {
+        crate::expressions::lexer::util::cycle_reference(
+            value,
+            start,
+            end,
+            self.locale,
+            self.language,
+        )
     }
 }
 

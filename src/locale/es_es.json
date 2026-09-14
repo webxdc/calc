@@ -130,5 +130,13 @@
   },
   "loading_screen": {
     "message": "Cargando IronCalc"
+  },
+  "export": {
+    "send_as_xlsx": "Enviar como .xlsx",
+    "failed": "No se pudo exportar este libro como .xlsx."
+  },
+  "import": {
+    "add_sheets": "Añadir hojas desde .xlsx",
+    "failed": "No se pudo leer este archivo como hoja de cálculo."
   }
 }

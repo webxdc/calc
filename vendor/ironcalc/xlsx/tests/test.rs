@@ -3,7 +3,7 @@
 
 use ironcalc::export::save_to_xlsx;
 use ironcalc::import::{load_from_xlsx, load_from_xlsx_bytes};
-use ironcalc_base::types::{Color, HorizontalAlignment, VerticalAlignment};
+use ironcalc_base::types::{Color, HorizontalAlignment, Link, MergedCell, VerticalAlignment};
 use ironcalc_base::{Model, UserModel, ROW_HEIGHT_FACTOR};
 use std::fs;
 use std::io::Read;
@@ -337,35 +337,53 @@ fn test_defined_names_casing() {
 #[test]
 fn test_exporting_merged_cells() {
     let temp_file_name = "temp_file_test_export_merged_cells.xlsx";
-    let expected_merge_cell_ref = {
+    let expected_merged_cells = {
         // loading the xlsx file containing merged cells
         let example_file_name = "tests/example.xlsx";
         let mut model = load_from_xlsx(example_file_name, "en", "UTC", "en").unwrap();
-        let expected_merge_cell_ref = model
+        let expected_merged_cells = model
             .workbook
             .worksheets
             .first()
             .unwrap()
-            .merge_cells
+            .merged_cells
             .clone();
+        // example.xlsx has K7:L10 and H18:J20 merged in the first sheet
+        assert_eq!(
+            expected_merged_cells,
+            vec![
+                MergedCell {
+                    row: 7,
+                    column: 11,
+                    width: 2,
+                    height: 4
+                },
+                MergedCell {
+                    row: 18,
+                    column: 8,
+                    width: 3,
+                    height: 3
+                },
+            ]
+        );
         // exporting and saving it in another xlsx
         model.evaluate();
         save_to_xlsx(&model, temp_file_name).unwrap();
-        expected_merge_cell_ref
+        expected_merged_cells
     };
     {
         let mut temp_model = load_from_xlsx(temp_file_name, "en", "UTC", "en").unwrap();
         {
             // loading the previous file back and verifying whether
             // merged cells got exported properly or not
-            let got_merge_cell_ref = &temp_model
+            let got_merged_cells = &temp_model
                 .workbook
                 .worksheets
                 .first()
                 .unwrap()
-                .merge_cells
+                .merged_cells
                 .clone();
-            assert_eq!(expected_merge_cell_ref, *got_merge_cell_ref);
+            assert_eq!(expected_merged_cells, *got_merged_cells);
             fs::remove_file(temp_file_name).unwrap();
         }
         {
@@ -377,23 +395,56 @@ fn test_exporting_merged_cells() {
                 .worksheets
                 .get_mut(0)
                 .unwrap()
-                .merge_cells
+                .merged_cells
                 .clear();
 
             save_to_xlsx(&temp_model, temp_file_name).unwrap();
             let temp_model2 = load_from_xlsx(temp_file_name, "en", "UTC", "en").unwrap();
-            let got_merge_cell_ref_cnt = &temp_model2
+            let got_merged_cells_count = &temp_model2
                 .workbook
                 .worksheets
                 .first()
                 .unwrap()
-                .merge_cells
+                .merged_cells
                 .len();
-            assert!(*got_merge_cell_ref_cnt == 0);
+            assert!(*got_merged_cells_count == 0);
         }
     }
 
     fs::remove_file(temp_file_name).unwrap();
+}
+
+// bad_merge_cells.xlsx has a pretty-printed (whitespace-indented) mergeCells
+// section with the entries B2:C3 (valid), C3:D4 (overlaps the previous one),
+// A10:A10 (single cell), FOO (garbage) and E5:F6 (valid). The anchor B2 holds
+// the number 42 and the covered cell C2 the number 43. Import must keep only
+// the two valid ranges, keep the anchor content and clear the content left in
+// covered cells.
+#[test]
+fn test_import_sanitizes_merged_cells() {
+    let model = load_from_xlsx("tests/bad_merge_cells.xlsx", "en", "UTC", "en").unwrap();
+    let merged_cells = &model.workbook.worksheets.first().unwrap().merged_cells;
+    assert_eq!(
+        merged_cells,
+        &vec![
+            MergedCell {
+                row: 2,
+                column: 2,
+                width: 2,
+                height: 2
+            },
+            MergedCell {
+                row: 5,
+                column: 5,
+                width: 2,
+                height: 2
+            },
+        ]
+    );
+    // the anchor keeps its content
+    assert_eq!(model.is_empty_cell(0, 2, 2), Ok(false));
+    // the covered cell is cleared
+    assert_eq!(model.is_empty_cell(0, 2, 3), Ok(true));
 }
 
 #[test]
@@ -473,6 +524,109 @@ fn test_relationship_whitespace_example() {
 fn test_missing_r_on_row() {
     let mut model = load_from_xlsx("tests/missing_r_on_row.xlsx", "en", "UTC", "en").unwrap();
     model.evaluate();
+}
+
+fn external_link(target: &str) -> Link {
+    Link::External {
+        target: target.to_string(),
+        tooltip: None,
+    }
+}
+
+fn internal_link(location: &str) -> Link {
+    Link::Internal {
+        location: location.to_string(),
+        tooltip: None,
+    }
+}
+
+// link_test.xlsx has two sheets, "Sheet1" and "Target". Sheet1 has 13 hyperlinks in
+// column B: external links of every flavour (https, ftp, mailto, file) in B2:B9 and
+// B29, and internal links (cell references and a defined name) in B10:B12 and B33.
+#[test]
+fn test_hyperlinks_import() {
+    let model = load_from_xlsx("tests/link_test.xlsx", "en", "UTC", "en").unwrap();
+    let links = &model.workbook.worksheets[0].links;
+
+    assert_eq!(links.len(), 13);
+    assert_eq!(
+        links.get(&(2, 2)),
+        Some(&external_link("http://www.ironcalc.com/"))
+    );
+    assert_eq!(
+        links.get(&(3, 2)),
+        Some(&external_link("https://www.microsoft.com/"))
+    );
+    // B4 has a tooltip (called ScreenTip in Excel)
+    assert_eq!(
+        links.get(&(4, 2)),
+        Some(&Link::External {
+            target: "https://support.microsoft.com/".to_string(),
+            tooltip: Some("This is a ScreenTip / tooltip".to_string()),
+        })
+    );
+    assert_eq!(
+        links.get(&(5, 2)),
+        Some(&external_link("ftp://ftp.gnu.org/"))
+    );
+    assert_eq!(
+        links.get(&(6, 2)),
+        Some(&external_link("mailto:someone@example.com"))
+    );
+    // the &amp; in the rels part is XML-decoded, the percent-encoding is kept
+    assert_eq!(
+        links.get(&(7, 2)),
+        Some(&external_link(
+            "mailto:someone@example.com?subject=Test%20Subject&body=Hello%20there"
+        ))
+    );
+    assert_eq!(
+        links.get(&(8, 2)),
+        Some(&external_link("file:///C:/Temp/test.xlsx"))
+    );
+    assert_eq!(
+        links.get(&(9, 2)),
+        Some(&external_link("file:///share/report.xlsx"))
+    );
+    assert_eq!(links.get(&(10, 2)), Some(&internal_link("Sheet1!A30")));
+    assert_eq!(links.get(&(11, 2)), Some(&internal_link("Target!A1")));
+    assert_eq!(links.get(&(12, 2)), Some(&internal_link("NamedTarget")));
+    assert_eq!(
+        links.get(&(29, 2)),
+        Some(&external_link(
+            "mailto:daniel@ironcalc.com?subject=hola%20que%20tal"
+        ))
+    );
+    // B33 is an internal link with a tooltip
+    assert_eq!(
+        links.get(&(33, 2)),
+        Some(&Link::Internal {
+            location: "Target!A1".to_string(),
+            tooltip: Some("Pronto sucedera".to_string()),
+        })
+    );
+
+    // The second sheet has no links
+    assert!(model.workbook.worksheets[1].links.is_empty());
+}
+
+#[test]
+fn test_hyperlinks_export_roundtrip() {
+    let mut model = load_from_xlsx("tests/link_test.xlsx", "en", "UTC", "en").unwrap();
+    model.evaluate();
+    let temp_file_name = "temp_file_link_test.xlsx";
+    save_to_xlsx(&model, temp_file_name).unwrap();
+    let model2 = load_from_xlsx(temp_file_name, "en", "UTC", "en").unwrap();
+    fs::remove_file(temp_file_name).unwrap();
+
+    assert_eq!(
+        model.workbook.worksheets[0].links,
+        model2.workbook.worksheets[0].links
+    );
+    assert_eq!(
+        model.workbook.worksheets[1].links,
+        model2.workbook.worksheets[1].links
+    );
 }
 
 #[test]

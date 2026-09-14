@@ -13,8 +13,8 @@ use ironcalc_base::{
         utils::{column_to_number, parse_reference_a1},
     },
     types::{
-        ArrayKind, Cell, Col, Color, Comment, DefinedName, FormulaValue, Row, SheetData,
-        SheetState, SpillValue, Table, Theme, Worksheet, WorksheetView,
+        ArrayKind, Cell, Col, Color, Comment, DefinedName, Dxf, FormulaValue, Link, MergedCell,
+        Row, SheetData, SheetState, SpillValue, Table, Theme, Worksheet, WorksheetView,
     },
 };
 use roxmltree::Node;
@@ -26,7 +26,7 @@ use super::{
     conditional_formatting::load_conditional_formatting,
     shared_strings::decode_xlsx_escapes,
     tables::load_table,
-    util::{get_attribute, get_color, get_number},
+    util::{get_attribute, get_bool_false, get_color, get_number},
 };
 
 pub(crate) struct Sheet {
@@ -147,8 +147,8 @@ fn load_columns(ws: Node) -> Result<Vec<Col>, XlsxError> {
             let max = max.parse::<i32>()?;
             let width = get_attribute(&col, "width")?;
             let width = width.parse::<f64>()?;
-            let custom_width = matches!(col.attribute("customWidth"), Some("1"));
-            let hidden = matches!(col.attribute("hidden"), Some("1"));
+            let custom_width = get_bool_false(col, "customWidth");
+            let hidden = get_bool_false(col, "hidden");
             let style = col
                 .attribute("style")
                 .map(|s| s.parse::<i32>().unwrap_or(0));
@@ -165,23 +165,48 @@ fn load_columns(ws: Node) -> Result<Vec<Col>, XlsxError> {
     Ok(cols)
 }
 
-fn load_merge_cells(ws: Node) -> Result<Vec<String>, XlsxError> {
+fn load_merge_cells(ws: Node) -> Result<Vec<MergedCell>, XlsxError> {
     // 18.3.1.55 Merge Cells
     // <mergeCells count="1">
     //    <mergeCell ref="K7:L10"/>
     // </mergeCells>
-    let mut merge_cells = Vec::new();
+    // Malformed, single-cell and overlapping entries are skipped: the engine
+    // invariants are that merged ranges span more than one cell and never
+    // intersect each other.
+    let mut merged_cells: Vec<MergedCell> = Vec::new();
     let merge_cells_nodes = ws
         .children()
         .filter(|n| n.has_tag_name("mergeCells"))
         .collect::<Vec<Node>>();
     if merge_cells_nodes.len() == 1 {
-        for merge_cell in merge_cells_nodes[0].children() {
-            let reference = get_attribute(&merge_cell, "ref")?.to_string();
-            merge_cells.push(reference);
+        for merge_cell in merge_cells_nodes[0]
+            .children()
+            .filter(|n| n.has_tag_name("mergeCell"))
+        {
+            let reference = get_attribute(&merge_cell, "ref")?;
+            let Ok((row, column, last_row, last_column)) = parse_range(reference) else {
+                continue;
+            };
+            let width = last_column - column + 1;
+            let height = last_row - row + 1;
+            if width < 1 || height < 1 || (width == 1 && height == 1) {
+                continue;
+            }
+            if merged_cells
+                .iter()
+                .any(|m| m.intersects(row, column, width, height))
+            {
+                continue;
+            }
+            merged_cells.push(MergedCell {
+                row,
+                column,
+                width,
+                height,
+            });
         }
     }
-    Ok(merge_cells)
+    Ok(merged_cells)
 }
 
 fn load_sheet_color(ws: Node, theme: &Theme) -> Result<Color, XlsxError> {
@@ -552,9 +577,11 @@ fn load_sheet_rels<R: Read + std::io::Seek>(
     path: &str,
     tables: &mut HashMap<String, Table>,
     sheet_name: &str,
-) -> Result<Vec<Comment>, XlsxError> {
+) -> Result<(Vec<Comment>, HashMap<String, String>), XlsxError> {
     // ...xl/worksheets/sheet6.xml -> xl/worksheets/_rels/sheet6.xml.rels
     let mut comments = Vec::new();
+    // relationship id ("rId4") -> target of the hyperlink
+    let mut hyperlinks = HashMap::new();
     let v: Vec<&str> = path.split("/worksheets/").collect();
     let mut path = v[0].to_string();
     path.push_str("/worksheets/_rels/");
@@ -562,7 +589,7 @@ fn load_sheet_rels<R: Read + std::io::Seek>(
     path.push_str(".rels");
     let file = archive.by_name(&path);
     if file.is_err() {
-        return Ok(comments);
+        return Ok((comments, hyperlinks));
     }
     let mut text = String::new();
     file.unwrap().read_to_string(&mut text)?;
@@ -582,6 +609,10 @@ fn load_sheet_rels<R: Read + std::io::Seek>(
             // Target="../comments1.xlsx"
             target.replace_range(..2, v[0]);
             comments = load_comments(archive, &target)?;
+        } else if t.ends_with("hyperlink") {
+            let id = get_attribute(&rel, "Id")?.to_string();
+            let target = get_attribute(&rel, "Target")?.to_string();
+            hyperlinks.insert(id, target);
         } else if t.ends_with("table") {
             let mut target = get_attribute(&rel, "Target")?.to_string();
 
@@ -597,7 +628,82 @@ fn load_sheet_rels<R: Read + std::io::Seek>(
             tables.insert(table.name.clone(), table);
         }
     }
-    Ok(comments)
+    Ok((comments, hyperlinks))
+}
+
+/// Maximum number of cells a single `<hyperlink>` range is expanded to
+const MAX_HYPERLINK_RANGE_CELLS: i64 = 10_000;
+
+/// Loads the `<hyperlinks>` element of a worksheet:
+/// ```xml
+/// <hyperlinks>
+///   <hyperlink ref="B2" r:id="rId1"/>
+///   <hyperlink ref="B4" r:id="rId3" tooltip="This is a tooltip"/>
+///   <hyperlink ref="B10" location="Sheet1!A30" display="Jump to A30 (this sheet)"/>
+/// </hyperlinks>
+/// ```
+/// External links have an `r:id` attribute pointing to a relationship in the sheet rels
+/// (`hyperlink_rels`), internal links have a `location` attribute instead.
+/// The `display` attribute is skipped: the displayed text is the content of the cell.
+fn load_hyperlinks(
+    ws: Node,
+    hyperlink_rels: &HashMap<String, String>,
+) -> Result<HashMap<(i32, i32), Link>, XlsxError> {
+    let mut links = HashMap::new();
+    let hyperlink_nodes = ws
+        .children()
+        .filter(|n| n.has_tag_name("hyperlinks"))
+        .flat_map(|n| n.children().filter(|n| n.has_tag_name("hyperlink")))
+        .collect::<Vec<Node>>();
+    for node in hyperlink_nodes {
+        let cell_ref = get_attribute(&node, "ref")?;
+        // Although it is normally a single cell, the ref can be a range like "B2:C3"
+        let (row_start, column_start, row_end, column_end) =
+            parse_range(cell_ref).map_err(XlsxError::Xml)?;
+        let tooltip = node.attribute("tooltip").map(str::to_string);
+        let rel_id = node.attribute((
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+            "id",
+        ));
+        let link = match rel_id {
+            Some(rel_id) => {
+                let target = match hyperlink_rels.get(rel_id) {
+                    Some(target) => target.clone(),
+                    // dangling relationship id, skip the hyperlink
+                    None => continue,
+                };
+                // An external link may also point to a location inside the target
+                // document. We keep it as a fragment of the target.
+                let target = match node.attribute("location") {
+                    Some(location) => format!("{target}#{location}"),
+                    None => target,
+                };
+                Link::External { target, tooltip }
+            }
+            None => {
+                let location = match node.attribute("location") {
+                    Some(location) if !location.is_empty() => location.to_string(),
+                    // a hyperlink with neither r:id nor location is malformed, skip it
+                    _ => continue,
+                };
+                Link::Internal { location, tooltip }
+            }
+        };
+        // The range is expanded to one link per cell. A corrupt or malicious file
+        // could use an enormous range (up to the whole sheet); in that case only
+        // the top-left cell gets the link instead of exhausting memory.
+        let cell_count = (row_end - row_start + 1) as i64 * (column_end - column_start + 1) as i64;
+        if cell_count > MAX_HYPERLINK_RANGE_CELLS {
+            links.insert((row_start, column_start), link);
+            continue;
+        }
+        for row in row_start..=row_end {
+            for column in column_start..=column_end {
+                links.insert((row, column), link.clone());
+            }
+        }
+    }
+    Ok(links)
 }
 
 struct SheetView {
@@ -724,7 +830,13 @@ fn get_sheet_view(ws: Node) -> SheetView {
             range: [row1, column1, row2, column2],
         }
     } else {
-        SheetView::default()
+        SheetView {
+            frozen_rows,
+            frozen_columns,
+            is_selected,
+            show_grid_lines,
+            ..Default::default()
+        }
     }
 }
 
@@ -733,6 +845,8 @@ pub(super) struct SheetSettings {
     pub name: String,
     pub state: SheetState,
     pub comments: Vec<Comment>,
+    /// hyperlink relationships in the sheet rels: relationship id -> target
+    pub hyperlink_rels: HashMap<String, String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -745,6 +859,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
     shared_strings: &mut Vec<String>,
     defined_names: Vec<DefinedNameS>,
     theme: &Theme,
+    dxfs: &mut Vec<Dxf>,
 ) -> Result<(Worksheet, bool), XlsxError> {
     let sheet_name = &settings.name;
     let sheet_id = settings.id;
@@ -813,7 +928,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
                 default_row_height
             }
         };
-        let custom_height = matches!(row.attribute("customHeight"), Some("1"));
+        let custom_height = get_bool_false(row, "customHeight");
         // The height of the row is always the visible height of the row
         // If custom_height is false that means the height was calculated automatically:
         // for example because a cell has many lines or a larger font
@@ -822,8 +937,8 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
             Some(s) => s.parse::<i32>().unwrap_or(0),
             None => 0,
         };
-        let custom_format = matches!(row.attribute("customFormat"), Some("1"));
-        let hidden = matches!(row.attribute("hidden"), Some("1"));
+        let custom_format = get_bool_false(row, "customFormat");
+        let hidden = get_bool_false(row, "hidden");
 
         if let Some(row_index) = row_index {
             if custom_height || custom_format || row_style != 0 || has_height_attribute || hidden {
@@ -967,10 +1082,14 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
                 let formula_node = fs[0];
                 let mut formula_type = formula_node.attribute("t").unwrap_or("normal");
                 let formula_ref = formula_node.attribute("ref");
-                if formula_node.attribute("ca") == Some("1")
+                if formula_type == "normal"
+                    && formula_node.attribute("ca") == Some("1")
                     && formula_node.text().is_none()
                     && !formula_node.children().any(|n| n.is_element())
                 {
+                    // A daughter cell of a shared formula (<f t="shared" ca="1" si="1"/>) is
+                    // also empty and may carry ca="1"; only an untyped <f ca="1"/> is a
+                    // volatile spill placeholder.
                     // This is a volatile formula that needs to be recalculated at each calculation.
                     // exit the if statement
                     // <f ca="1"/>
@@ -1147,19 +1266,54 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
         }
     }
 
-    let merge_cells = load_merge_cells(ws)?;
+    let merged_cells = load_merge_cells(ws)?;
 
-    let conditional_formatting = load_conditional_formatting(ws, theme)?;
+    // Covered cells of a merged range must not hold content (an engine
+    // invariant); Excel leaves them empty but third-party producers sometimes
+    // leave values behind, so we clear them here (keeping their styles).
+    for merged_cell in &merged_cells {
+        for row in merged_cell.row..=merged_cell.last_row() {
+            for column in merged_cell.column..=merged_cell.last_column() {
+                if row == merged_cell.row && column == merged_cell.column {
+                    continue;
+                }
+                if let Some(cell) = sheet_data.get_mut(&row).and_then(|r| r.get_mut(&column)) {
+                    *cell = Cell::EmptyCell {
+                        s: cell.get_style(),
+                    };
+                }
+            }
+        }
+    }
+
+    let links = load_hyperlinks(ws, &settings.hyperlink_rels)?;
+
+    let conditional_formatting = load_conditional_formatting(ws, theme, dxfs)?;
     // pageSetup
     // <pageSetup orientation="portrait" r:id="rId1"/>
 
     let mut views = HashMap::new();
+    // The focus (the moving corner of the selection) is not in the file: use
+    // the corner of the range opposite the selected cell on each axis.
+    let [range_start_row, range_start_column, range_end_row, range_end_column] = sheet_view.range;
+    let focus_row = if sheet_view.selected_row == range_end_row {
+        range_start_row
+    } else {
+        range_end_row
+    };
+    let focus_column = if sheet_view.selected_column == range_end_column {
+        range_start_column
+    } else {
+        range_end_column
+    };
     views.insert(
         0,
         WorksheetView {
             row: sheet_view.selected_row,
             column: sheet_view.selected_column,
             range: sheet_view.range,
+            focus_row,
+            focus_column,
             top_row: 1,
             left_column: 1,
         },
@@ -1176,13 +1330,14 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
             sheet_id,
             state: state.to_owned(),
             color,
-            merge_cells,
+            merged_cells,
             comments: settings.comments,
             frozen_rows: sheet_view.frozen_rows,
             frozen_columns: sheet_view.frozen_columns,
             show_grid_lines: sheet_view.show_grid_lines,
             views,
             conditional_formatting,
+            links,
         },
         sheet_view.is_selected,
     ))
@@ -1195,9 +1350,10 @@ pub(super) fn load_sheets<R: Read + std::io::Seek>(
     tables: &mut HashMap<String, Table>,
     shared_strings: &mut Vec<String>,
     theme: &Theme,
+    dxfs: &mut Vec<Dxf>,
 ) -> Result<(Vec<Worksheet>, u32), XlsxError> {
-    // load comments and tables
-    let mut comments = HashMap::new();
+    // load comments, tables and hyperlink relationships
+    let mut sheet_rels = HashMap::new();
     for sheet in &workbook.worksheets {
         let rel = &rels[&sheet.id];
         if rel.rel_type.ends_with("worksheet") {
@@ -1207,7 +1363,7 @@ pub(super) fn load_sheets<R: Read + std::io::Seek>(
             } else {
                 format!("xl/{path}")
             };
-            comments.insert(
+            sheet_rels.insert(
                 &sheet.id,
                 load_sheet_rels(archive, &path, tables, &sheet.name)?,
             );
@@ -1234,14 +1390,15 @@ pub(super) fn load_sheets<R: Read + std::io::Seek>(
             } else {
                 format!("xl/{path}")
             };
+            let (comments, hyperlink_rels) = sheet_rels
+                .get(rel_id)
+                .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?;
             let settings = SheetSettings {
                 name: sheet_name.to_string(),
                 id: sheet.sheet_id,
                 state: state.clone(),
-                comments: comments
-                    .get(rel_id)
-                    .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?
-                    .to_vec(),
+                comments: comments.to_vec(),
+                hyperlink_rels: hyperlink_rels.clone(),
             };
             let (s, is_selected) = load_sheet(
                 archive,
@@ -1252,6 +1409,7 @@ pub(super) fn load_sheets<R: Read + std::io::Seek>(
                 shared_strings,
                 defined_names.clone(),
                 theme,
+                dxfs,
             )?;
             if is_selected {
                 selected_sheet = sheet_index;
@@ -1265,7 +1423,11 @@ pub(super) fn load_sheets<R: Read + std::io::Seek>(
 
 #[cfg(test)]
 mod tests {
-    use crate::import::worksheets::parse_reference;
+    use std::collections::HashMap;
+
+    use ironcalc_base::types::Link;
+
+    use crate::import::worksheets::{load_hyperlinks, parse_reference};
 
     #[test]
     fn parse_reference_works() {
@@ -1273,5 +1435,44 @@ mod tests {
         assert!(cell_reference.is_ok());
         let cell_reference = cell_reference.unwrap();
         assert_eq!(cell_reference.sheet, "📈 Overview");
+    }
+
+    #[test]
+    fn load_hyperlinks_skips_malformed_and_caps_huge_ranges() {
+        let xml = r#"<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+            <hyperlinks>
+                <hyperlink ref="B2" location="Target!A1"/>
+                <hyperlink ref="B3"/>
+                <hyperlink ref="B4" location=""/>
+                <hyperlink ref="D1:E2" location="Target!A1"/>
+                <hyperlink ref="G1:XFD1048576" location="Target!A1"/>
+                <hyperlink ref="F1" r:id="rId9"/>
+            </hyperlinks>
+        </worksheet>"#;
+        let doc = roxmltree::Document::parse(xml).unwrap();
+        let ws = doc.root().first_child().unwrap();
+        // no relationships: the r:id hyperlink is dangling
+        let rels = HashMap::new();
+
+        let links = load_hyperlinks(ws, &rels).unwrap();
+
+        let internal = Link::Internal {
+            location: "Target!A1".to_string(),
+            tooltip: None,
+        };
+        // B2 plus the four cells of D1:E2 plus the top-left of the huge range.
+        // The hyperlinks with no location, an empty location or a dangling
+        // relationship are skipped.
+        assert_eq!(links.len(), 6);
+        assert_eq!(links.get(&(2, 2)), Some(&internal));
+        for (row, column) in [(1, 4), (1, 5), (2, 4), (2, 5)] {
+            assert_eq!(links.get(&(row, column)), Some(&internal));
+        }
+        // the huge range is not expanded: only its top-left cell gets the link
+        assert_eq!(links.get(&(1, 7)), Some(&internal));
+        assert_eq!(links.get(&(2, 7)), None);
+        assert_eq!(links.get(&(3, 2)), None);
+        assert_eq!(links.get(&(4, 2)), None);
+        assert_eq!(links.get(&(1, 6)), None);
     }
 }

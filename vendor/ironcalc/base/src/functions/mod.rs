@@ -9,11 +9,9 @@ use crate::{
 
 pub(crate) mod binary_search;
 mod database;
-mod date_and_time;
+pub(crate) mod date_and_time;
 mod engineering;
 mod financial;
-mod financial_bonds;
-mod financial_util;
 mod information;
 mod logical;
 mod lookup_and_reference;
@@ -168,6 +166,7 @@ pub enum Function {
     Filter,
     Hlookup,
     Hstack,
+    Hyperlink,
     Index,
     Indirect,
     Lookup,
@@ -227,6 +226,7 @@ pub enum Function {
     Asc,
     Arraytotext,
     Dollar,
+    Encodeurl,
     Findb,
     Fixed,
     Leftb,
@@ -285,6 +285,10 @@ pub enum Function {
     FisherInv,
     Forecast,
     ForecastLinear,
+    ForecastEts,
+    ForecastEtsConfint,
+    ForecastEtsSeasonality,
+    ForecastEtsStat,
     Gamma,
     GammaDist,
     GammaInv,
@@ -467,6 +471,9 @@ pub enum Function {
     Coupncd,
     Coupnum,
     Couppcd,
+    Amordegrc,
+    Amorlinc,
+    Vdb,
 
     // Engineering: Bessel and transcendental functions
     Besseli,
@@ -710,6 +717,7 @@ impl_function_lookup! {
     filter    => Filter,
     hlookup   => Hlookup,
     hstack    => Hstack,
+    hyperlink => Hyperlink,
     index     => Index,
     indirect  => Indirect,
     lookup    => Lookup,
@@ -769,6 +777,7 @@ impl_function_lookup! {
     asc         => Asc,
     arraytotext => Arraytotext,
     dollar      => Dollar,
+    encodeurl   => Encodeurl,
     findb       => Findb,
     fixed       => Fixed,
     leftb       => Leftb,
@@ -988,6 +997,9 @@ impl_function_lookup! {
     coupncd    => Coupncd,
     coupnum    => Coupnum,
     couppcd    => Couppcd,
+    amordegrc  => Amordegrc,
+    amorlinc   => Amorlinc,
+    vdb        => Vdb,
 
     // Engineering: Bessel and transcendental functions
     besseli       => Besseli,
@@ -1076,6 +1088,10 @@ impl_function_lookup! {
     steyx           => Steyx,
     forecast        => Forecast,
     forecastlinear  => ForecastLinear,
+    forecastets            => ForecastEts,
+    forecastetsconfint     => ForecastEtsConfint,
+    forecastetsseasonality => ForecastEtsSeasonality,
+    forecastetsstat        => ForecastEtsStat,
     frequency       => Frequency,
     growth          => Growth,
     linest          => Linest,
@@ -1230,6 +1246,7 @@ impl Function {
             Function::Filter => functions.filter.clone(),
             Function::Hlookup => functions.hlookup.clone(),
             Function::Hstack => functions.hstack.clone(),
+            Function::Hyperlink => functions.hyperlink.clone(),
             Function::Index => functions.index.clone(),
             Function::Indirect => functions.indirect.clone(),
             Function::Lookup => functions.lookup.clone(),
@@ -1285,6 +1302,7 @@ impl Function {
             Function::Asc => functions.asc.clone(),
             Function::Arraytotext => functions.arraytotext.clone(),
             Function::Dollar => functions.dollar.clone(),
+            Function::Encodeurl => functions.encodeurl.clone(),
             Function::Findb => functions.findb.clone(),
             Function::Fixed => functions.fixed.clone(),
             Function::Leftb => functions.leftb.clone(),
@@ -1495,6 +1513,9 @@ impl Function {
             Function::Coupncd => functions.coupncd.clone(),
             Function::Coupnum => functions.coupnum.clone(),
             Function::Couppcd => functions.couppcd.clone(),
+            Function::Amordegrc => functions.amordegrc.clone(),
+            Function::Amorlinc => functions.amorlinc.clone(),
+            Function::Vdb => functions.vdb.clone(),
             Function::Besseli => functions.besseli.clone(),
             Function::Besselj => functions.besselj.clone(),
             Function::Besselk => functions.besselk.clone(),
@@ -1569,6 +1590,10 @@ impl Function {
             Function::Steyx => functions.steyx.clone(),
             Function::Forecast => functions.forecast.clone(),
             Function::ForecastLinear => functions.forecastlinear.clone(),
+            Function::ForecastEts => functions.forecastets.clone(),
+            Function::ForecastEtsConfint => functions.forecastetsconfint.clone(),
+            Function::ForecastEtsSeasonality => functions.forecastetsseasonality.clone(),
+            Function::ForecastEtsStat => functions.forecastetsstat.clone(),
             Function::Frequency => functions.frequency.clone(),
             Function::Growth => functions.growth.clone(),
             Function::Linest => functions.linest.clone(),
@@ -1589,7 +1614,7 @@ impl Function {
         }
     }
 
-    pub fn into_iter() -> IntoIter<Function, 487> {
+    pub fn into_iter() -> IntoIter<Function, 496> {
         [
             Function::And,
             Function::False,
@@ -1689,6 +1714,7 @@ impl Function {
             Function::Indirect,
             Function::Hlookup,
             Function::Hstack,
+            Function::Hyperlink,
             Function::Filter,
             Function::Lookup,
             Function::Match,
@@ -1736,6 +1762,7 @@ impl Function {
             Function::Asc,
             Function::Arraytotext,
             Function::Dollar,
+            Function::Encodeurl,
             Function::Findb,
             Function::Fixed,
             Function::Leftb,
@@ -1865,6 +1892,9 @@ impl Function {
             Function::Coupncd,
             Function::Coupnum,
             Function::Couppcd,
+            Function::Amordegrc,
+            Function::Amorlinc,
+            Function::Vdb,
             Function::Besseli,
             Function::Besselj,
             Function::Besselk,
@@ -2049,6 +2079,10 @@ impl Function {
             Function::Steyx,
             Function::Forecast,
             Function::ForecastLinear,
+            Function::ForecastEts,
+            Function::ForecastEtsConfint,
+            Function::ForecastEtsSeasonality,
+            Function::ForecastEtsStat,
             Function::Frequency,
             Function::Growth,
             Function::Linest,
@@ -2132,6 +2166,7 @@ impl Function {
             Function::Unichar => "_xlfn.UNICHAR".to_string(),
             Function::Numbervalue => "_xlfn.NUMBERVALUE".to_string(),
             Function::Arraytotext => "_xlfn.ARRAYTOTEXT".to_string(),
+            Function::Encodeurl => "_xlfn.ENCODEURL".to_string(),
             Function::Rri => "_xlfn.RRI".to_string(),
             Function::Pduration => "_xlfn.PDURATION".to_string(),
             Function::Bitand => "_xlfn.BITAND".to_string(),
@@ -2252,6 +2287,11 @@ impl Function {
             Function::QuartileExc => "_xlfn.QUARTILE.EXC".to_string(),
             Function::QuartileInc => "_xlfn.QUARTILE.INC".to_string(),
 
+            Function::ForecastEts => "_xlfn.FORECAST.ETS".to_string(),
+            Function::ForecastEtsConfint => "_xlfn.FORECAST.ETS.CONFINT".to_string(),
+            Function::ForecastEtsSeasonality => "_xlfn.FORECAST.ETS.SEASONALITY".to_string(),
+            Function::ForecastEtsStat => "_xlfn.FORECAST.ETS.STAT".to_string(),
+
             _ => {
                 let language = get_default_language();
                 self.to_localized_name(language)
@@ -2335,6 +2375,7 @@ impl<'a> Model<'a> {
             Function::Indirect => self.fn_indirect(args, cell),
             Function::Hlookup => self.fn_hlookup(args, cell),
             Function::Hstack => self.fn_hstack(args, cell),
+            Function::Hyperlink => self.fn_hyperlink(args, cell),
             Function::Lookup => self.fn_lookup(args, cell),
             Function::Match => self.fn_match(args, cell),
             Function::Offset => self.fn_offset(args, cell),
@@ -2382,6 +2423,7 @@ impl<'a> Model<'a> {
             Function::Asc => self.fn_asc(args, cell),
             Function::Arraytotext => self.fn_arraytotext(args, cell),
             Function::Dollar => self.fn_dollar(args, cell),
+            Function::Encodeurl => self.fn_encodeurl(args, cell),
             Function::Findb => self.fn_findb(args, cell),
             Function::Fixed => self.fn_fixed(args, cell),
             Function::Leftb => self.fn_leftb(args, cell),
@@ -2511,6 +2553,9 @@ impl<'a> Model<'a> {
             Function::Coupncd => self.fn_coupncd(args, cell),
             Function::Coupnum => self.fn_coupnum(args, cell),
             Function::Couppcd => self.fn_couppcd(args, cell),
+            Function::Amordegrc => self.fn_amordegrc(args, cell),
+            Function::Amorlinc => self.fn_amorlinc(args, cell),
+            Function::Vdb => self.fn_vdb(args, cell),
             Function::Besseli => self.fn_besseli(args, cell),
             Function::Besselj => self.fn_besselj(args, cell),
             Function::Besselk => self.fn_besselk(args, cell),
@@ -2730,6 +2775,10 @@ impl<'a> Model<'a> {
             Function::Steyx => self.fn_steyx(args, cell),
             Function::Forecast => self.fn_forecast(args, cell),
             Function::ForecastLinear => self.fn_forecast_linear(args, cell),
+            Function::ForecastEts => self.fn_forecast_ets(args, cell),
+            Function::ForecastEtsConfint => self.fn_forecast_ets_confint(args, cell),
+            Function::ForecastEtsSeasonality => self.fn_forecast_ets_seasonality(args, cell),
+            Function::ForecastEtsStat => self.fn_forecast_ets_stat(args, cell),
             Function::Frequency => self.fn_frequency(args, cell),
             Function::Growth => self.fn_growth(args, cell),
             Function::Linest => self.fn_linest(args, cell),
