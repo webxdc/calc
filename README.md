@@ -3,9 +3,27 @@
 
 Bundle the [ironcal](https://github.com/ironcalc/ironcalc) frontend as webxdc application.
 
-## Syncing
-You can sync your sheets with other group members. 
+> ### ⚠️ Syncing has no conflict resolution yet
+>
+> **Concurrent edits can break a sheet silently.**
+>
+> You can sync your sheets with other group members, but two people working at the
+> same time can corrupt the workbook without any error being shown:
+>
+> - changing structure elements (adding/removing sheets, rows or columns)
+> - editing the same area of a table
+>
+> Coordinate who edits when, and export important workbooks as `.xlsx` before sharing.
 
+### Default language
+
+To make sure all users see the same spreadsheet (number format, formulas) the locale of the workbook is always english (en_US)
+
+### Import or export xlsx files
+
+You can import existing xlsx files using the import button at the lower right bar. All sheets from the imported file are added to the existing sheets.
+
+You can also export the current state as xlsx file.
 
 ## Building
 
@@ -69,3 +87,9 @@ pnpm webxdc:xdc
 
 Both open the webxdc-dev frontend on `http://localhost:7000`. There is also
 `pnpm webxdc:dist`, which runs against the unpacked `dist` directory.
+
+### Testing
+
+```bash
+pnpm test
+```

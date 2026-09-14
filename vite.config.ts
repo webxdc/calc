@@ -11,6 +11,14 @@ export default defineConfig({
     buildXDC({ outFileName: "calc.xdc" }),
     mockWebxdc(),
   ],
+  build: {
+    // Vite 8 defaults to `baseline-widely-available`, which resolved to
+    // chrome111/safari16.4/ios16.4 here. Messenger WebViews lag well behind
+    // that, and syntax they cannot parse takes down the whole bundle - a
+    // blank app, with nothing rendered at all. Vite 6, which built the last
+    // known-good .xdc, defaulted to this set instead.
+    target: ["chrome87", "edge88", "firefox78", "safari14", "ios14"],
+  },
   optimizeDeps: {
     // `@ironcalc/workbook` is a linked package we actively rebuild. We
     // do not want vite to put it in a stale cache during its optimization.
