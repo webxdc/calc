@@ -32,33 +32,38 @@ function getDefaultUILocale(): string {
   return "en-US";
 }
 
-// Converts long language codes to short ones used by the Model
-export function getShortLocaleCode(longCode: string): string {
-  switch (longCode) {
-    case "es-ES": {
-      return "es";
-    }
-    case "fr-FR": {
-      return "fr";
-    }
-    case "de-DE": {
-      return "de";
-    }
-    case "it-IT": {
-      return "it";
-    }
-    case "en-GB": {
-      return "en-GB";
-    }
-    default: {
-      return "en";
-    }
+// IronCalc synchronizes edits as diffs carrying the raw user input string
+// and the receiving model re-parses that string with its own locale and
+// language . Function names, argument separators and decimal separators
+// must therefore be identical everywhere. The UI language
+// above is a separate concern and stays per device.
+export const ENGINE_LOCALE = "en";
+export const ENGINE_LANGUAGE = "en";
+// The timezone is a workbook property too: TODAY() and NOW() would otherwise
+// evaluate differently on every device.
+export const ENGINE_TIMEZONE = "UTC";
+
+// Locale and timezone belong to the workbook, so a stored workbook can still
+// carry the device settings written by an earlier version of this app, or a
+// value set through IronCalc's regional settings panel. Both are synchronized
+// as diffs, so restoring them here also propagates the correction to the peers
+// that still hold the diverging workbook.
+function applyEngineSettings(model: Model): Model {
+  if (model.getLocale() !== ENGINE_LOCALE) {
+    model.setLocale(ENGINE_LOCALE);
   }
+  if (model.getTimezone() !== ENGINE_TIMEZONE) {
+    model.setTimezone(ENGINE_TIMEZONE);
+  }
+  return model;
 }
 
-// en-US => en, en-GB => en, es-ES => es, fr-FR => fr, de-DE => de, it-IT => it
-export function getLanguageFromLocale(locale: string): string {
-  return locale.split("-")[0];
+// Loads a stored workbook with the shared engine settings. The language is not
+// part of the serialized workbook and is passed in on every load.
+function modelFromStoredBytes(modelBytesString: string): Model {
+  return applyEngineSettings(
+    Model.from_bytes(base64ToBytes(modelBytesString), ENGINE_LANGUAGE),
+  );
 }
 
 function randomUUID(): string {
@@ -137,24 +142,16 @@ function getNewName(existingNames: string[]): string {
   return `${baseName}-Infinity`;
 }
 
-export function createModelWithSafeTimezone(name: string): Model {
-  const locale = loadDefaultLocaleFromStorage();
-  const language = locale.split("-")[0];
-  const localeShort = getShortLocaleCode(locale);
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return new Model(name, localeShort, tz, language);
-  } catch (e) {
-    console.warn("Failed to get timezone, defaulting to UTC", e);
-    return new Model(name, localeShort, "UTC", language);
-  }
-}
-
 export function createNewModel(): Model {
   const models = getModelsMetadata();
   const name = getNewName(Object.values(models).map((m) => m.name));
 
-  const model = createModelWithSafeTimezone(name);
+  const model = new Model(
+    name,
+    ENGINE_LOCALE,
+    ENGINE_TIMEZONE,
+    ENGINE_LANGUAGE,
+  );
   const uuid = randomUUID();
   localStorage.setItem("selected", uuid);
   localStorage.setItem(uuid, bytesToBase64(model.toBytes()));
@@ -174,9 +171,8 @@ export function loadSelectedModelFromStorage(): Model | null {
     if (uuid) {
       // We try to load the selected model
       const modelBytesString = localStorage.getItem(uuid);
-      const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
       if (modelBytesString) {
-        return Model.from_bytes(base64ToBytes(modelBytesString), language);
+        return modelFromStoredBytes(modelBytesString);
       }
     }
     return null;
@@ -235,9 +231,8 @@ export function saveModelToStorage(model: Model) {
 export function selectModelFromStorage(uuid: string): Model | null {
   localStorage.setItem("selected", uuid);
   const modelBytesString = localStorage.getItem(uuid);
-  const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
   if (modelBytesString) {
-    return Model.from_bytes(base64ToBytes(modelBytesString), language);
+    return modelFromStoredBytes(modelBytesString);
   }
   return null;
 }
@@ -292,9 +287,8 @@ export function deleteModelByUuid(uuid: string): Model | null {
   // If it wasn't the selected model, return the currently selected model
   if (selectedUuid) {
     const modelBytesString = localStorage.getItem(selectedUuid);
-    const language = getLanguageFromLocale(loadDefaultLocaleFromStorage());
     if (modelBytesString) {
-      return Model.from_bytes(base64ToBytes(modelBytesString), language);
+      return modelFromStoredBytes(modelBytesString);
     }
   }
 
@@ -321,8 +315,9 @@ export function duplicateModel(uuid: string): Model | null {
     return null;
   }
 
-  const language = originalModel.getLanguage();
-  const duplicatedModel = Model.from_bytes(originalModel.toBytes(), language);
+  const duplicatedModel = applyEngineSettings(
+    Model.from_bytes(originalModel.toBytes(), ENGINE_LANGUAGE),
+  );
   const models = getModelsMetadata();
   const originalName = models[uuid].name;
   const existingNames = Object.values(models).map((m) => m.name);
