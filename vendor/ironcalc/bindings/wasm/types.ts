@@ -6,6 +6,15 @@ export interface Area {
   height: number;
 }
 
+// A rectangular range displayed as a single cell, anchored at its top-left
+// corner. `width` is the number of columns and `height` the number of rows.
+export interface MergedCell {
+  row: number;
+  column: number;
+  width: number;
+  height: number;
+}
+
 export enum BorderType {
   All = "All",
   Inner = "Inner",
@@ -78,28 +87,30 @@ interface Range {
 
 export type TokenType =
   | "Illegal"
-  | "Eof"
+  | "EOF"
   | { Ident: string }
   | { String: string }
   | { Boolean: boolean }
   | { Number: number }
-  | { ERROR: ErrorType }
-  | { COMPARE: OpCompareType }
-  | { SUM: OpSumType }
-  | { PRODUCT: OpProductType }
-  | "POWER"
-  | "LPAREN"
-  | "RPAREN"
-  | "COLON"
-  | "SEMICOLON"
-  | "LBRACKET"
-  | "RBRACKET"
-  | "LBRACE"
-  | "RBRACE"
-  | "COMMA"
-  | "BANG"
-  | "PERCENT"
-  | "AND"
+  | { Error: ErrorType }
+  | { Compare: OpCompareType }
+  | { Sum: OpSumType }
+  | { Product: OpProductType }
+  | "Power"
+  | "LeftParenthesis"
+  | "RightParenthesis"
+  | "Colon"
+  | "Semicolon"
+  | "LeftBracket"
+  | "RightBracket"
+  | "LeftBrace"
+  | "RightBrace"
+  | "Comma"
+  | "Bang"
+  | "Percent"
+  | "And"
+  | "Spill"
+  | "Backslash"
   | Reference
   | Range;
 
@@ -107,6 +118,22 @@ export interface MarkedToken {
   token: TokenType;
   start: number;
   end: number;
+}
+
+// What the grammar accepts at a cursor position while typing a formula.
+// `{ FunctionName }` carries the partial name typed so far; `{ Argument }`
+// carries the function name and the 1-based argument index.
+export type ExpectedTokens =
+  | "Range"
+  | "Other"
+  | { FunctionName: string }
+  | { Argument: [string, number] };
+
+export interface CompletionContext {
+  expecting: ExpectedTokens[];
+  // The span [replace_from, cursor) the UI should replace when inserting a
+  // completion (e.g. the partial name being typed).
+  replace_from: number;
 }
 
 export type CellArrayStructure =
@@ -169,18 +196,18 @@ export enum BorderStyle {
 }
 
 interface BorderItem {
-  style: string;
+  style: BorderStyle;
   color?: Color;
 }
 
 interface CellStyleBorder {
   diagonal_up?: boolean;
   diagonal_down?: boolean;
-  left: BorderItem;
-  right: BorderItem;
-  top: BorderItem;
-  bottom: BorderItem;
-  diagonal: BorderItem;
+  left?: BorderItem;
+  right?: BorderItem;
+  top?: BorderItem;
+  bottom?: BorderItem;
+  diagonal?: BorderItem;
 }
 
 export type VerticalAlignment =
@@ -394,6 +421,19 @@ export interface ConditionalFormatting {
   priority: number;
 }
 
+/** A CF rule plus its storage `index` in the worksheet's rule list, returned by
+ * getConditionalFormattingList. The list is sorted by priority (descending), so
+ * `index` — not the array position — must be used to address a rule in
+ * getDxfForConditionalFormatting / updateConditionalFormatting /
+ * deleteConditionalFormatting / raiseConditionalFormattingPriority /
+ * lowerConditionalFormattingPriority. */
+export interface ConditionalFormattingView {
+  index: number;
+  range: string;
+  cf_rule: CfRule;
+  priority: number;
+}
+
 export type IconSetType =
   | "Arrows3"
   | "ArrowsGray3"
@@ -462,6 +502,8 @@ type ClipboardData = Map<number, Map <number, ClipboardCell>>;
 export interface ClipboardCell {
   text: string;
   style: CellStyle;
+  /** The link attached to the cell, when present */
+  link?: Link | null;
 }
 
 export interface Clipboard {
@@ -476,6 +518,22 @@ export interface DefinedName {
   formula: string;
 }
 
+/**
+ * A cell hyperlink. The link is cell metadata: the text displayed in the cell
+ * is the cell content, not part of the link.
+ * External links point to a resource outside the workbook (an URL, a mailto:
+ * URI or a file). Internal links point to a location in this workbook: a cell
+ * reference like "Sheet1!A30" or a defined name.
+ */
+export type Link =
+  | { type: "External"; target: string; tooltip?: string | null }
+  | { type: "Internal"; location: string; tooltip?: string | null };
+
+/** A link together with the cell (row, column) it is attached to. A dynamic
+ * link is created by a formula like HYPERLINK: it cannot be edited or deleted,
+ * only the formula can change it. */
+export type CellLink = { row: number; column: number; dynamic: boolean } & Link;
+
 export interface FmtSettings {
   currency: string;
   currency_format: string;
@@ -485,6 +543,16 @@ export interface FmtSettings {
   long_date_example: string;
   number_fmt: string;
   number_example: string;
+}
+
+/** The formatting categories a named style includes. */
+export interface StyleIncludes {
+  number_format: boolean;
+  font: boolean;
+  fill: boolean;
+  border: boolean;
+  alignment: boolean;
+  protection: boolean;
 }
 
 /** A named cell style (e.g. "Normal", "Heading 1", or a custom style). */

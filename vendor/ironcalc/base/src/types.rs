@@ -167,16 +167,91 @@ impl Display for SheetState {
 /// position of the viewport.
 #[derive(Encode, Decode, Debug, PartialEq, Clone)]
 pub struct WorksheetView {
-    /// The row index of the currently selected cell.
+    /// The row index of the currently selected cell (the anchor of the selection).
     pub row: i32,
-    /// The column index of the currently selected cell.
+    /// The column index of the currently selected cell (the anchor of the selection).
     pub column: i32,
     /// The selected range in the worksheet, specified as [start_row, start_column, end_row, end_column].
+    /// Always normalized (start <= end). This is derived state: the bounding box of the
+    /// anchor and the focus, grown so it never covers a merged cell partially.
     pub range: [i32; 4],
+    /// The row of the focus: the moving corner of the selection, the one that
+    /// keyboard- or pointer-extending the selection displaces. It is not
+    /// necessarily a corner of `range` (extending over merged cells grows the
+    /// range beyond the anchor-focus bounding box).
+    pub focus_row: i32,
+    /// The column of the focus.
+    pub focus_column: i32,
     /// The row index of the topmost visible cell in the worksheet view.
     pub top_row: i32,
     /// The column index of the leftmost visible cell in the worksheet view.
     pub left_column: i32,
+}
+
+/// Represents a hyperlink in the worksheet, which can be either external or internal.
+/// The display text is not part of the link, it is the content of the cell the link is
+/// attached to. Links are just cell metadata.
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, PartialEq, Eq, Clone)]
+#[serde(tag = "type")]
+pub enum Link {
+    /// A link to a resource outside the workbook: an URL, a mailto: URI or a file.
+    /// If the target points to a location inside another document it is written
+    /// as `target#location` (e.g. `file.xlsx#Sheet1!A1`).
+    External {
+        target: String,
+        tooltip: Option<String>,
+    },
+    /// A link to a location in this workbook: a cell reference like `Sheet1!A30`
+    /// or a defined name.
+    Internal {
+        location: String,
+        tooltip: Option<String>,
+    },
+}
+
+/// A rectangular range of cells that is displayed as a single cell.
+/// The anchor (top-left) cell holds the content and is the only cell of the
+/// range users can edit; every other cell of the range is "covered" and must
+/// stay empty of content, although it can hold styles.
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct MergedCell {
+    /// Row of the anchor (top-left) cell
+    pub row: i32,
+    /// Column of the anchor (top-left) cell
+    pub column: i32,
+    /// Number of columns of the merged range (>= 1)
+    pub width: i32,
+    /// Number of rows of the merged range (>= 1)
+    pub height: i32,
+}
+
+impl MergedCell {
+    /// Last (bottom) row of the merged range
+    pub fn last_row(&self) -> i32 {
+        self.row + self.height - 1
+    }
+
+    /// Last (rightmost) column of the merged range
+    pub fn last_column(&self) -> i32 {
+        self.column + self.width - 1
+    }
+
+    /// Returns true if (row, column) is inside the merged range
+    pub fn contains(&self, row: i32, column: i32) -> bool {
+        row >= self.row
+            && row <= self.last_row()
+            && column >= self.column
+            && column <= self.last_column()
+    }
+
+    /// Returns true if the merged range intersects the rectangle of `width` columns
+    /// and `height` rows anchored at (row, column)
+    pub fn intersects(&self, row: i32, column: i32, width: i32, height: i32) -> bool {
+        row <= self.last_row()
+            && row + height > self.row
+            && column <= self.last_column()
+            && column + width > self.column
+    }
 }
 
 /// Internal representation of a worksheet Excel object
@@ -191,7 +266,7 @@ pub struct Worksheet {
     pub sheet_id: u32,
     pub state: SheetState,
     pub color: Color,
-    pub merge_cells: Vec<String>,
+    pub merged_cells: Vec<MergedCell>,
     pub comments: Vec<Comment>,
     pub frozen_rows: i32,
     pub frozen_columns: i32,
@@ -199,6 +274,8 @@ pub struct Worksheet {
     /// Whether or not to show the grid lines in the worksheet
     pub show_grid_lines: bool,
     pub conditional_formatting: Vec<ConditionalFormatting>,
+    /// Hyperlinks in the worksheet, keyed by (row, column) of the cell they are attached to
+    pub links: HashMap<(i32, i32), Link>,
 }
 
 /// Internal representation of Excel's sheet_data
@@ -681,6 +758,35 @@ impl Default for CellStyleXfs {
             apply_protection: true,
             apply_font: true,
             apply_fill: true,
+        }
+    }
+}
+
+/// The formatting categories a named style includes — Excel's "Style Includes"
+/// checkboxes, stored as the `apply*` attributes of the style's `cellStyleXfs`
+/// record. Applying the style to a cell only stamps the included categories.
+/// The default (like "Normal") includes everything; the built-in "Percent",
+/// for example, includes only the number format.
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(default)]
+pub struct StyleIncludes {
+    pub number_format: bool,
+    pub font: bool,
+    pub fill: bool,
+    pub border: bool,
+    pub alignment: bool,
+    pub protection: bool,
+}
+
+impl Default for StyleIncludes {
+    fn default() -> Self {
+        StyleIncludes {
+            number_format: true,
+            font: true,
+            fill: true,
+            border: true,
+            alignment: true,
+            protection: true,
         }
     }
 }

@@ -11,7 +11,7 @@
 //! ironcalc_base = { git = "https://github.com/ironcalc/IronCalc" }
 //! ```
 //!
-//! <small> until version 0.5.0 you should use the git dependencies as stated </small>
+//! <small> until version 1.0.0 you should use the git dependencies as stated </small>
 //!
 //! In this example we use the excel function `CONCAT` to concatenate strings in cells `A1` and `B1`:
 //!
@@ -53,6 +53,8 @@ mod constants;
 mod cut_paste;
 mod functions;
 mod implicit_intersection;
+pub mod links;
+mod merged_cells;
 mod model;
 mod styles;
 mod tz;
@@ -64,10 +66,11 @@ mod workbook;
 #[cfg(test)]
 mod test;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mock_time"))]
 pub mod mock_time;
 
 pub use locale::get_supported_locales;
+pub use merged_cells::MergeStructure;
 pub use model::get_milliseconds_since_epoch;
 pub use model::FmtSettings;
 pub use model::Model;

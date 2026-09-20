@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test::util::new_empty_model;
-use crate::types::Cell;
+use crate::types::{Cell, FormulaValue};
 
 // Helper to evaluate a formula and return the formatted text
 fn eval_formula(formula: &str) -> String {
@@ -18,6 +18,14 @@ fn eval_formula_raw_number(formula: &str) -> Result<f64, String> {
     model.evaluate();
     match model._get_cell("A1") {
         Cell::NumberCell { v, .. } => Ok(*v),
+        Cell::CellFormula {
+            v: FormulaValue::Number(v),
+            ..
+        }
+        | Cell::ArrayFormula {
+            v: FormulaValue::Number(v),
+            ..
+        } => Ok(*v),
         Cell::BooleanCell { v, .. } => Ok(if *v { 1.0 } else { 0.0 }),
         Cell::ErrorCell { ei, .. } => Err(format!("{}", ei)),
         _ => Err(model._get_text("A1")),
@@ -62,7 +70,7 @@ fn test_datevalue_ambiguous_ddmm() {
     // 01/02/2023 interpreted as MM/DD -> 2-Jan-2023
     assert_eq!(
         eval_formula_raw_number("=DATEVALUE(\"01/02/2023\")").unwrap(),
-        44929.0
+        44928.0
     );
 }
 
@@ -95,21 +103,34 @@ fn test_datevalue_year_first_text_month() {
 fn test_datevalue_mmdd_with_day_gt_12() {
     assert_eq!(
         eval_formula_raw_number("=DATEVALUE(\"6/15/2021\")").unwrap(),
-        44373.0
+        44362.0
     );
 }
 
 #[test]
 fn test_datevalue_error_conditions() {
     let cases = [
-        "=DATEVALUE(\"31/04/2023\")",   // invalid day (Apr has 30 days)
-        "=DATEVALUE(\"13/13/2023\")",   // invalid month
-        "=DATEVALUE(\"not a date\")",   // non-date text
+        "=DATEVALUE(\"31/04/2023\")", // invalid day (Apr has 30 days)
+        "=DATEVALUE(\"13/13/2023\")", // invalid month
+        "=DATEVALUE(\"not a date\")", // non-date text
     ];
     for formula in cases {
         let result = eval_formula(formula);
         assert_eq!(result, *"#VALUE!", "Expected #VALUE! for {}", formula);
     }
+}
+
+#[test]
+fn test_datevalue_arguments() {
+    let mut model = new_empty_model();
+    model._set("A1", "=DATEVALUE()");
+    model._set("A2", "=DATEVALUE(\"2023-01-02\")");
+    model._set("A3", "=DATEVALUE(\"2023-01-02\", \"2023-01-03\")");
+    model.evaluate();
+
+    assert_eq!(model._get_text("A1"), *"#ERROR!");
+    assert_eq!(model._get_text("A2"), *"44928");
+    assert_eq!(model._get_text("A3"), *"#ERROR!");
 }
 
 // Helper to set and evaluate a single DATEDIF call
@@ -155,9 +176,9 @@ fn test_datedif_md() {
 fn test_datedif_edge_and_error_cases() {
     let mut model = new_empty_model();
     // Leap-year spanning
-    model._set("A1", "=DATEDIF(\"28/2/2020\", \"1/3/2020\", \"D\")");
+    model._set("A1", "=DATEDIF(\"2/28/2020\", \"3/1/2020\", \"D\")");
     // End date before start date => #NUM!
-    model._set("A2", "=DATEDIF(\"1/2/2021\", \"1/1/2021\", \"D\")");
+    model._set("A2", "=DATEDIF(\"2/1/2021\", \"1/1/2021\", \"D\")");
     // Invalid unit => #VALUE!
     model._set("A3", "=DATEDIF(\"1/1/2020\", \"1/1/2021\", \"Z\")");
     model.evaluate();

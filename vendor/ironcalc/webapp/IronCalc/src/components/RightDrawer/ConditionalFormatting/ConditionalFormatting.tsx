@@ -1,11 +1,9 @@
-import type {
-  ConditionalFormatting as CfEntry,
-  Dxf,
-  IronCalcTheme,
-  Model,
-} from "@ironcalc/wasm";
+import type { Dxf, IronCalcTheme, Model } from "@ironcalc/wasm";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   PackageOpen,
   PencilLine,
   Plus,
@@ -15,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../Button/Button";
 import { IconButton } from "../../Button/IconButton";
@@ -95,8 +94,10 @@ const ConditionalFormatting = ({
   };
 
   const loadRules = (): Rule[] => {
-    const list = model.getConditionalFormattingList(sheet) as CfEntry[];
-    return list.flatMap((cf, modelIndex) => {
+    const list = model.getConditionalFormattingList(sheet);
+    return list.flatMap((cf) => {
+      // List is priority-sorted; cf.index is the stable storage index.
+      const modelIndex = cf.index;
       const partial = cfRuleToRuleData(cf);
       if (!partial) {
         return [];
@@ -112,7 +113,7 @@ const ConditionalFormatting = ({
       return [
         {
           ...partial,
-          id: String(modelIndex),
+          id: `${modelIndex}`,
           applyTo: cf.range,
           ruleType,
           ruleOperator: partial.ruleOperator ?? "",
@@ -176,6 +177,33 @@ const ConditionalFormatting = ({
   const handleDelete = (id: string) => {
     model.deleteConditionalFormatting(sheet, parseInt(id, 10));
     onUpdate();
+  };
+
+  const handleDuplicate = (rule: Rule) => {
+    const cfRule = ruleDataToCfRule(rule);
+    if (!cfRule) {
+      return;
+    }
+    model.addConditionalFormatting(sheet, rule.applyTo, cfRule);
+    onUpdate();
+  };
+
+  const handleReorder = (rule: Rule, lower: boolean) => {
+    const index = parseInt(rule.id, 10);
+    const applyReorder = () => {
+      if (lower) {
+        model.lowerConditionalFormattingPriority(sheet, index);
+      } else {
+        model.raiseConditionalFormattingPriority(sheet, index);
+      }
+      onUpdate();
+    };
+    // flushSync ensures the DOM is updated before the transition snapshots it.
+    if (typeof document.startViewTransition === "function") {
+      document.startViewTransition(() => flushSync(applyReorder));
+    } else {
+      applyReorder();
+    }
   };
 
   if (isEditView) {
@@ -244,7 +272,7 @@ const ConditionalFormatting = ({
     const q = searchQuery.trim().toLowerCase();
     return (
       rule.applyTo.toLowerCase().includes(q) ||
-      getRuleDescription({ ...rule, resolveValue: resolveRef })
+      getRuleDescription({ ...rule, resolveValue: resolveRef, t })
         .toLowerCase()
         .includes(q)
     );
@@ -397,6 +425,7 @@ const ConditionalFormatting = ({
                     <div
                       key={rule.id}
                       className={`ic-cf-list-item${isActive ? " ic-cf-list-item--selected" : ""}`}
+                      style={{ viewTransitionName: `ic-cf-rule-${rule.id}` }}
                       // biome-ignore lint/a11y/noNoninteractiveTabindex: FIXME
                       tabIndex={0}
                       onClick={() => selectRuleRange(rule)}
@@ -407,6 +436,31 @@ const ConditionalFormatting = ({
                         }
                       }}
                     >
+                      <div className="ic-cf-list-item-order-stack">
+                        <IconButton
+                          className="ic-cf-list-item-order-chevron"
+                          icon={<ChevronUp />}
+                          disabled={rules[0]?.id === rule.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReorder(rule, false);
+                          }}
+                          aria-label={t("conditional_formatting.move_up")}
+                        />
+                        <div className="ic-cf-list-item-order">
+                          {rules.findIndex((r) => r.id === rule.id) + 1}
+                        </div>
+                        <IconButton
+                          className="ic-cf-list-item-order-chevron"
+                          icon={<ChevronDown />}
+                          disabled={rules[rules.length - 1]?.id === rule.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReorder(rule, true);
+                          }}
+                          aria-label={t("conditional_formatting.move_down")}
+                        />
+                      </div>
                       <div
                         className="ic-cf-list-item-preview"
                         style={
@@ -450,6 +504,7 @@ const ConditionalFormatting = ({
                             : getRuleDescription({
                                 ...rule,
                                 resolveValue: resolveRef,
+                                t,
                               })}
                         </div>
                         <div className="ic-cf-list-item-range">
@@ -465,6 +520,20 @@ const ConditionalFormatting = ({
                               setEditingRule(rule);
                             }}
                             aria-label={t("conditional_formatting.edit_rule")}
+                          />
+                        </Tooltip>
+                        <Tooltip
+                          title={t("conditional_formatting.duplicate_rule")}
+                        >
+                          <IconButton
+                            icon={<Copy />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicate(rule);
+                            }}
+                            aria-label={t(
+                              "conditional_formatting.duplicate_rule",
+                            )}
                           />
                         </Tooltip>
                         <Tooltip
