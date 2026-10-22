@@ -4,7 +4,9 @@ use bitcode::{Decode, Encode};
 
 use crate::{
     cf_types::CfRule,
-    types::{Cell, Col, Color, Row, SheetState, Style, Theme, Worksheet},
+    types::{
+        Cell, Col, Color, Link, MergedCell, Row, SheetState, Style, StyleIncludes, Theme, Worksheet,
+    },
 };
 
 #[derive(Clone, Encode, Decode)]
@@ -67,6 +69,15 @@ pub(crate) enum Diff {
         column: i32,
         old_value: Box<Option<Style>>,
         new_value: Box<Style>,
+    },
+    // Unlike `SetCellStyle`, applying a named style is recorded by name so that
+    // redo re-links the cell to the style instead of copying its formatting.
+    ApplyNamedStyle {
+        sheet: u32,
+        row: i32,
+        column: i32,
+        old_value: Box<Option<Style>>,
+        name: String,
     },
     // Column and Row diffs
     SetColumnWidth {
@@ -155,10 +166,22 @@ pub(crate) enum Diff {
         index: u32,
         name: String,
     },
+    DuplicateSheet {
+        /// Index of the sheet that was duplicated.
+        source_index: u32,
+        /// Index of the resulting copy (always `source_index + 1`).
+        new_index: u32,
+    },
     RenameSheet {
         index: u32,
         old_value: String,
         new_value: String,
+    },
+    MoveSheet {
+        /// Index of the worksheet before the move.
+        sheet_index: u32,
+        /// Index the worksheet was moved to.
+        new_index: u32,
     },
     SetSheetColor {
         index: u32,
@@ -213,6 +236,10 @@ pub(crate) enum Diff {
         old_value: String,
         new_value: String,
     },
+    SetWorkbookName {
+        old_value: String,
+        new_value: String,
+    },
     SetTimezone {
         old_value: String,
         new_value: String,
@@ -220,7 +247,8 @@ pub(crate) enum Diff {
     // Named style diffs
     CreateNamedStyle {
         name: String,
-        xf_id: i32,
+        style: Box<Style>,
+        includes: StyleIncludes,
     },
     DeleteNamedStyle {
         name: String,
@@ -229,8 +257,10 @@ pub(crate) enum Diff {
     UpdateNamedStyle {
         name: String,
         new_name: String,
-        old_xf_id: i32,
-        new_xf_id: i32,
+        old_style: Box<Style>,
+        new_style: Box<Style>,
+        old_includes: StyleIncludes,
+        new_includes: StyleIncludes,
     },
     // Conditional formatting diffs
     AddConditionalFormatting {
@@ -254,6 +284,36 @@ pub(crate) enum Diff {
         old_priority: u32,
         new_range: String,
         new_rule: Box<CfRule>,
+    },
+    /// Sets (`new_value` is `Some`) or deletes (`new_value` is `None`) the link
+    /// attached to a cell. `old_value` is the link previously in the cell if any.
+    SetCellLink {
+        sheet: u32,
+        row: i32,
+        column: i32,
+        old_value: Box<Option<Link>>,
+        new_value: Box<Option<Link>>,
+    },
+    /// Swaps the priorities of the two CF rules at `index_a` and `index_b`.
+    /// `priority_a`/`priority_b` are their priorities *before* the swap.
+    SwapConditionalFormattingPriority {
+        sheet: u32,
+        index_a: u32,
+        index_b: u32,
+        priority_a: u32,
+        priority_b: u32,
+    },
+    /// Sets the full list of merged cells of a sheet: apply installs
+    /// `new_value`, undo installs `old_value`. Structural actions (insert,
+    /// delete or move of rows and columns) displace merged ranges on their own
+    /// when they are replayed, but their undo cannot always reconstruct the
+    /// original ranges; those actions push this diff with
+    /// `old_value == new_value` (a no-op on apply) so that undo restores the
+    /// exact previous list.
+    SetMergedCells {
+        sheet: u32,
+        old_value: Vec<MergedCell>,
+        new_value: Vec<MergedCell>,
     },
     // FIXME: we are missing SetViewDiffs
 }

@@ -1,21 +1,64 @@
-import type {
-  CellStyle,
-  FmtSettings,
-  IronCalcTheme,
-  Model,
+import {
+  BorderStyle,
+  type CellStyle,
+  type Color,
+  type FmtSettings,
+  type HorizontalAlignment,
+  type IronCalcTheme,
+  type Model,
+  type StyleIncludes,
+  type VerticalAlignment,
 } from "@ironcalc/wasm";
-import { Check } from "lucide-react";
-import { type CSSProperties, useState } from "react";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Bold,
+  Check,
+  Italic,
+  Strikethrough,
+  Underline,
+} from "lucide-react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  ArrowMiddleFromLine,
+  BorderBottomIcon,
+  BorderLeftIcon,
+  BorderNoneIcon,
+  BorderOuterIcon,
+  BorderRightIcon,
+  BorderTopIcon,
+} from "../../../icons";
+import { STYLE_OPTIONS as LINE_STYLE_OPTIONS } from "../../BorderPicker/LineStylePicker";
 import { Button } from "../../Button/Button";
-import { resolveColorToHex } from "../../ColorPicker/util";
+import ColorPicker from "../../ColorPicker/ColorPicker";
+import { resolveColorToHex, themeColor } from "../../ColorPicker/util";
 import { NumberFormats } from "../../FormatMenu/formatUtil";
 import { Input } from "../../Input/Input";
+import { Menu } from "../../Menu/Menu";
+import { MenuItem } from "../../Menu/MenuItem";
 import { Select } from "../../Select/Select";
-import FormatStylePicker, {
-  type FormatStyle,
-} from "../ConditionalFormatting/FormatStylePicker";
+import { Switch } from "../../Switch/Switch";
+import { ToggleButton } from "../../ToggleButton/ToggleButton";
+import type { FormatStyle } from "../ConditionalFormatting/FormatStylePicker";
 import "./edit-named-style.css";
+import {
+  borderStyleToCss,
+  FAINT_PREVIEW_BORDER,
+  getPreviewText,
+  HORIZONTAL_JUSTIFY,
+  VERTICAL_ALIGN_ITEMS,
+} from "./named-styles-utils";
+
+interface BorderSides {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+}
 
 export interface SaveError {
   nameError: string;
@@ -35,27 +78,64 @@ interface EditNamedStyleProps {
 export interface NamedStyleSavePayload {
   name: string;
   style: CellStyle;
+  includes: StyleIncludes;
+}
+
+interface PreviewOptions {
+  includeFont: boolean;
+  includeFill: boolean;
+  includeAlignment: boolean;
+  includeBorder: boolean;
+  horizontalAlign: HorizontalAlignment;
+  verticalAlign: VerticalAlignment;
+  borderSides: BorderSides;
+  borderLineStyle: BorderStyle;
+  borderColor: Color;
 }
 
 function formatStyleToPreview(
   formatStyle: FormatStyle,
   currentTheme: IronCalcTheme,
+  options: PreviewOptions,
 ): CSSProperties {
-  const decorations: string[] = [];
-  if (formatStyle.underline) {
-    decorations.push("underline");
+  const preview: CSSProperties = {};
+  if (options.includeFill) {
+    preview.backgroundColor =
+      resolveColorToHex(formatStyle.fillColor, currentTheme) || undefined;
   }
-  if (formatStyle.strike) {
-    decorations.push("line-through");
+  if (options.includeFont) {
+    const decorations: string[] = [];
+    if (formatStyle.underline) {
+      decorations.push("underline");
+    }
+    if (formatStyle.strike) {
+      decorations.push("line-through");
+    }
+    preview.color =
+      resolveColorToHex(formatStyle.fontColor, currentTheme) || undefined;
+    preview.fontWeight = formatStyle.bold ? "bold" : undefined;
+    preview.fontStyle = formatStyle.italic ? "italic" : undefined;
+    preview.textDecoration =
+      decorations.length > 0 ? decorations.join(" ") : undefined;
   }
-  return {
-    backgroundColor:
-      resolveColorToHex(formatStyle.fillColor, currentTheme) || undefined,
-    color: resolveColorToHex(formatStyle.fontColor, currentTheme) || undefined,
-    fontWeight: formatStyle.bold ? "bold" : undefined,
-    fontStyle: formatStyle.italic ? "italic" : undefined,
-    textDecoration: decorations.length > 0 ? decorations.join(" ") : undefined,
-  };
+  if (options.includeAlignment) {
+    preview.justifyContent = HORIZONTAL_JUSTIFY[options.horizontalAlign];
+    preview.alignItems = VERTICAL_ALIGN_ITEMS[options.verticalAlign];
+  }
+  if (options.includeBorder) {
+    const { top, right, bottom, left } = options.borderSides;
+    const borderCss = borderStyleToCss(
+      options.borderLineStyle,
+      resolveColorToHex(options.borderColor, currentTheme),
+    );
+    // Draw each side explicitly so the box-shadow never doubles a real border.
+    preview.boxShadow = "none";
+    preview.borderTop = top ? borderCss : FAINT_PREVIEW_BORDER;
+    preview.borderRight = right ? borderCss : FAINT_PREVIEW_BORDER;
+    preview.borderBottom = bottom ? borderCss : FAINT_PREVIEW_BORDER;
+    preview.borderLeft = left ? borderCss : FAINT_PREVIEW_BORDER;
+  }
+  return preview;
 }
 
 function initFormatStyle(model: Model, style: CellStyle): FormatStyle {
@@ -70,6 +150,10 @@ function initFormatStyle(model: Model, style: CellStyle): FormatStyle {
 }
 
 const CUSTOM_VALUE = "__custom__";
+
+const FONT_ATTRS = ["bold", "italic", "underline", "strike"] as const;
+
+const BORDER_SIDES = ["top", "right", "bottom", "left"] as const;
 
 const EditNamedStyle = ({
   model,
@@ -87,23 +171,16 @@ const EditNamedStyle = ({
     if (initialName) {
       return initialName;
     }
+    const prefix = t("named_styles.default_name_prefix");
     const existing = new Set(existingStyleNames.map((n) => n.toLowerCase()));
     let counter = 1;
-    let candidate = `Style${counter}`;
+    let candidate = `${prefix}${counter}`;
     while (existing.has(candidate.toLowerCase())) {
       counter++;
-      candidate = `Style${counter}`;
+      candidate = `${prefix}${counter}`;
     }
     return candidate;
   };
-
-  const [name, setName] = useState(getDefaultName);
-  const [nameError, setNameError] = useState("");
-  const [formatStyle, setFormatStyle] = useState<FormatStyle>(() =>
-    initFormatStyle(model, style),
-  );
-  const [numFmt, setNumFmt] = useState<string>(style.num_fmt);
-  const [customFmt, setCustomFmt] = useState("");
 
   const knownFormats = [
     NumberFormats.AUTO,
@@ -115,7 +192,99 @@ const EditNamedStyle = ({
     formatOptions.short_date,
     formatOptions.long_date,
   ];
+
+  const [name, setName] = useState(getDefaultName);
+  const [nameError, setNameError] = useState("");
+  const [formatStyle, setFormatStyle] = useState<FormatStyle>(() =>
+    initFormatStyle(model, style),
+  );
+  const [numFmt, setNumFmt] = useState<string>(style.num_fmt);
+  const [customFmt, setCustomFmt] = useState(() =>
+    knownFormats.includes(style.num_fmt) ? "" : style.num_fmt,
+  );
+  const [customFmtTouched, setCustomFmtTouched] = useState(false);
+  const [initialIncludes] = useState<StyleIncludes | null>(() => {
+    if (!initialName) {
+      return null;
+    }
+    try {
+      return model.getNamedStyleIncludes(initialName);
+    } catch {
+      return null;
+    }
+  });
+  const [includeFormat, setIncludeFormat] = useState(
+    initialIncludes?.number_format ?? true,
+  );
+  const [includeFont, setIncludeFont] = useState(initialIncludes?.font ?? true);
+  const [includeFill, setIncludeFill] = useState(initialIncludes?.fill ?? true);
+  const [includeAlignment, setIncludeAlignment] = useState(
+    initialIncludes?.alignment ?? false,
+  );
+  const [horizontalAlign, setHorizontalAlign] = useState<HorizontalAlignment>(
+    style.alignment?.horizontal ?? "general",
+  );
+  const [verticalAlign, setVerticalAlign] = useState<VerticalAlignment>(
+    style.alignment?.vertical ?? "bottom",
+  );
+  const [includeBorder, setIncludeBorder] = useState(
+    initialIncludes?.border ?? false,
+  );
+  const [borderSides, setBorderSides] = useState<BorderSides>(() => ({
+    top: !!style.border.top?.style,
+    right: !!style.border.right?.style,
+    bottom: !!style.border.bottom?.style,
+    left: !!style.border.left?.style,
+  }));
+  const [borderLineStyle, setBorderLineStyle] = useState<BorderStyle>(() => {
+    const firstSide =
+      style.border.top ??
+      style.border.right ??
+      style.border.bottom ??
+      style.border.left;
+    return (firstSide?.style as BorderStyle) || BorderStyle.Thin;
+  });
+  const defaultColor = themeColor("--palette-common-black");
+  const [borderColor, setBorderColor] = useState<Color>(() => {
+    const firstSide =
+      style.border.top ??
+      style.border.right ??
+      style.border.bottom ??
+      style.border.left;
+    return firstSide?.color ?? defaultColor;
+  });
+  const [fontColorOpen, setFontColorOpen] = useState(false);
+  const [fillColorOpen, setFillColorOpen] = useState(false);
+  const [borderColorOpen, setBorderColorOpen] = useState(false);
+  const fontColorRef = useRef<HTMLButtonElement>(null);
+  const fillColorRef = useRef<HTMLButtonElement>(null);
+  const borderColorRef = useRef<HTMLButtonElement>(null);
+  const customFmtInputRef = useRef<HTMLInputElement>(null);
+
+  const allBorderSidesOn =
+    borderSides.top &&
+    borderSides.right &&
+    borderSides.bottom &&
+    borderSides.left;
+
+  const noBorderSidesOn =
+    !borderSides.top &&
+    !borderSides.right &&
+    !borderSides.bottom &&
+    !borderSides.left;
+
+  const setAllBorderSides = (on: boolean) =>
+    setBorderSides({ top: on, right: on, bottom: on, left: on });
+
   const isCustom = !knownFormats.includes(numFmt);
+  const wasCustomRef = useRef(isCustom);
+
+  useEffect(() => {
+    if (isCustom && !wasCustomRef.current) {
+      customFmtInputRef.current?.focus();
+    }
+    wasCustomRef.current = isCustom;
+  }, [isCustom]);
 
   const formatSelectOptions = [
     { value: NumberFormats.AUTO, label: t("toolbar.format_menu.auto") },
@@ -149,6 +318,7 @@ const EditNamedStyle = ({
 
   const handleFormatChange = (value: string) => {
     if (value === CUSTOM_VALUE) {
+      setCustomFmtTouched(false);
       setNumFmt(customFmt || "");
     } else {
       setNumFmt(value);
@@ -156,29 +326,58 @@ const EditNamedStyle = ({
   };
 
   const selectValue = isCustom ? CUSTOM_VALUE : numFmt;
-  const hasError = !!nameError || !name.trim();
+  const customFmtError = includeFormat && isCustom && !customFmt.trim();
+  const hasError = !!nameError || !name.trim() || customFmtError;
 
   const handleSave = () => {
     if (hasError) {
+      setCustomFmtTouched(true);
       return;
     }
+    const makeBorderItem = (enabled: boolean) =>
+      enabled ? { style: borderLineStyle, color: borderColor } : undefined;
     const newStyle = {
       ...style,
       num_fmt: numFmt,
+      alignment: {
+        horizontal: horizontalAlign,
+        vertical: verticalAlign,
+        wrap_text: style.alignment?.wrap_text ?? false,
+      },
+      border: {
+        ...style.border,
+        top: makeBorderItem(borderSides.top),
+        right: makeBorderItem(borderSides.right),
+        bottom: makeBorderItem(borderSides.bottom),
+        left: makeBorderItem(borderSides.left),
+      },
       fill: {
         ...style.fill,
         color: formatStyle.fillColor || undefined,
       },
       font: {
         ...style.font,
-        b: formatStyle.bold,
-        i: formatStyle.italic,
-        u: formatStyle.underline,
-        strike: formatStyle.strike,
-        color: formatStyle.fontColor || undefined,
+        b: formatStyle.bold || false,
+        i: formatStyle.italic || false,
+        u: formatStyle.underline || false,
+        strike: formatStyle.strike || false,
+        color: formatStyle.fontColor,
       },
     };
-    const error = onSave({ name: name.trim(), style: newStyle });
+    // Protection is not editable in this panel, so it is always carried
+    // over from the base style.
+    const error = onSave({
+      name: name.trim(),
+      style: newStyle,
+      includes: {
+        number_format: includeFormat,
+        font: includeFont,
+        fill: includeFill,
+        border: includeBorder,
+        alignment: includeAlignment,
+        protection: true,
+      },
+    });
     if (error.nameError) {
       setNameError(error.nameError);
     } else {
@@ -201,9 +400,23 @@ const EditNamedStyle = ({
         <div className="ic-edit-style-header-box">
           <div
             className="ic-edit-style-preview"
-            style={formatStyleToPreview(formatStyle, currentTheme)}
+            style={formatStyleToPreview(formatStyle, currentTheme, {
+              includeFont,
+              includeFill,
+              includeAlignment,
+              includeBorder,
+              horizontalAlign,
+              verticalAlign,
+              borderSides,
+              borderLineStyle,
+              borderColor,
+            })}
           >
-            Aa
+            {getPreviewText(
+              includeFormat ? numFmt : NumberFormats.AUTO,
+              formatOptions,
+              t,
+            )}
           </div>
           <span className="ic-edit-style-header-box-text">
             {name.trim() || t("named_styles.new_style")}
@@ -213,8 +426,8 @@ const EditNamedStyle = ({
           <Input
             autoFocus
             type="text"
-            label="Name"
-            placeholder="Style name"
+            label={t("named_styles.name_label")}
+            placeholder={t("named_styles.name_placeholder")}
             value={name}
             error={!!nameError}
             helperText={nameError}
@@ -224,34 +437,417 @@ const EditNamedStyle = ({
             }}
             onKeyDown={handleKeyDown}
           />
-          <div className="ic-edit-style-format-group">
-            <Select
-              label="Format"
-              value={selectValue}
-              options={formatSelectOptions}
-              onChange={handleFormatChange}
-            />
-            {isCustom && (
-              <Input
-                type="text"
-                placeholder='e.g. #,##0.00 or "€"#,##0'
-                value={customFmt}
-                onChange={(e) => {
-                  setCustomFmt(e.target.value);
-                  setNumFmt(e.target.value);
-                }}
-                onKeyDown={handleKeyDown}
+        </div>
+
+        <div className="ic-edit-style-styled-box ic-edit-style-section-header">
+          <div className="ic-edit-style-section-title">
+            {t("named_styles.style_properties")}
+          </div>
+        </div>
+
+        <div className="ic-edit-style-styled-box ic-edit-style-format-group">
+          <Switch
+            checked={includeFormat}
+            onChange={setIncludeFormat}
+            label={t("named_styles.number_label")}
+          />
+          {includeFormat && (
+            <>
+              <Select
+                label={t("named_styles.format_label")}
+                value={selectValue}
+                options={formatSelectOptions}
+                onChange={handleFormatChange}
               />
-            )}
-          </div>
-          <div className="ic-edit-style-format-group">
-            <span className="ic-edit-style-label">Style</span>
-            <FormatStylePicker
-              value={formatStyle}
-              onChange={setFormatStyle}
-              currentTheme={currentTheme}
-            />
-          </div>
+              {isCustom && (
+                <Input
+                  ref={customFmtInputRef}
+                  type="text"
+                  placeholder={t("named_styles.custom_format_placeholder")}
+                  value={customFmt}
+                  error={customFmtTouched && customFmtError}
+                  helperText={
+                    customFmtTouched && customFmtError
+                      ? t("named_styles.custom_format_required")
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setCustomFmt(e.target.value);
+                    setNumFmt(e.target.value);
+                  }}
+                  onBlur={() => setCustomFmtTouched(true)}
+                  onKeyDown={handleKeyDown}
+                />
+              )}
+            </>
+          )}
+        </div>
+        <div className="ic-edit-style-styled-box ic-edit-style-format-group">
+          <Switch
+            checked={includeFont}
+            onChange={(checked) => {
+              setIncludeFont(checked);
+              if (!checked) {
+                setFontColorOpen(false);
+              }
+            }}
+            label={t("named_styles.font_label")}
+          />
+          {includeFont && (
+            <div className="ic-edit-style-subrow">
+              <span className="ic-edit-style-sublabel">
+                {t("named_styles.font_style_label")}
+              </span>
+              <div className="ic-edit-style-controls-row">
+                <ToggleButton
+                  multiple
+                  size="md"
+                  value={FONT_ATTRS.filter((attr) => formatStyle[attr])}
+                  onChange={(attrs) =>
+                    setFormatStyle((current) => ({
+                      ...current,
+                      bold: attrs.includes("bold"),
+                      italic: attrs.includes("italic"),
+                      underline: attrs.includes("underline"),
+                      strike: attrs.includes("strike"),
+                    }))
+                  }
+                  options={[
+                    {
+                      value: "bold",
+                      icon: <Bold />,
+                      "aria-label": t("toolbar.bold"),
+                    },
+                    {
+                      value: "italic",
+                      icon: <Italic />,
+                      "aria-label": t("toolbar.italic"),
+                    },
+                    {
+                      value: "underline",
+                      icon: <Underline />,
+                      "aria-label": t("toolbar.underline"),
+                    },
+                    {
+                      value: "strike",
+                      icon: <Strikethrough />,
+                      "aria-label": t("toolbar.strike_through"),
+                    },
+                  ]}
+                />
+                <div className="ic-input-control md ic-edit-style-swatch-wrapper">
+                  <button
+                    ref={fontColorRef}
+                    type="button"
+                    className="ic-edit-style-swatch"
+                    style={{
+                      backgroundColor:
+                        resolveColorToHex(
+                          formatStyle.fontColor,
+                          currentTheme,
+                        ) || defaultColor,
+                    }}
+                    onClick={() => setFontColorOpen(true)}
+                    aria-label={t("toolbar.font_color")}
+                  />
+                </div>
+                <ColorPicker
+                  color={formatStyle.fontColor}
+                  defaultColor={defaultColor}
+                  title={t("color_picker.default")}
+                  onChange={(color) => {
+                    setFormatStyle((current) => ({
+                      ...current,
+                      fontColor: color,
+                    }));
+                    setFontColorOpen(false);
+                  }}
+                  onClose={() => setFontColorOpen(false)}
+                  anchorEl={fontColorRef}
+                  open={fontColorOpen}
+                  theme={currentTheme}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="ic-edit-style-styled-box ic-edit-style-format-group">
+          <Switch
+            checked={includeFill}
+            onChange={(checked) => {
+              setIncludeFill(checked);
+              if (!checked) {
+                setFillColorOpen(false);
+              }
+            }}
+            label={t("named_styles.fill_label")}
+          />
+          {includeFill && (
+            <div className="ic-edit-style-subrow">
+              <span className="ic-edit-style-sublabel">
+                {t("named_styles.background_color_label")}
+              </span>
+              <div className="ic-input-control md ic-edit-style-swatch-wrapper">
+                <button
+                  ref={fillColorRef}
+                  type="button"
+                  className="ic-edit-style-swatch"
+                  style={{
+                    backgroundColor:
+                      resolveColorToHex(formatStyle.fillColor, currentTheme) ||
+                      "transparent",
+                  }}
+                  onClick={() => setFillColorOpen(true)}
+                  aria-label={t("toolbar.fill_color")}
+                />
+              </div>
+              <ColorPicker
+                color={formatStyle.fillColor || "#FFFFFF"}
+                defaultColor=""
+                title={t("color_picker.default")}
+                onChange={(color) => {
+                  setFormatStyle((current) => ({
+                    ...current,
+                    fillColor: color,
+                  }));
+                  setFillColorOpen(false);
+                }}
+                onClose={() => setFillColorOpen(false)}
+                anchorEl={fillColorRef}
+                open={fillColorOpen}
+                theme={currentTheme}
+              />
+            </div>
+          )}
+        </div>
+        <div className="ic-edit-style-styled-box ic-edit-style-format-group">
+          <Switch
+            checked={includeAlignment}
+            onChange={setIncludeAlignment}
+            label={t("named_styles.alignment_label")}
+          />
+          {includeAlignment && (
+            <>
+              <div className="ic-edit-style-subrow">
+                <span className="ic-edit-style-sublabel">
+                  {t("named_styles.horizontal_align_label")}
+                </span>
+                <ToggleButton
+                  size="md"
+                  value={horizontalAlign}
+                  // "general" is the unpressed state: clicking the pressed
+                  // option goes back to it.
+                  onChange={(value) =>
+                    setHorizontalAlign(
+                      horizontalAlign === value ? "general" : value,
+                    )
+                  }
+                  options={[
+                    {
+                      value: "left",
+                      icon: <AlignLeft />,
+                      "aria-label": t("toolbar.align_left"),
+                    },
+                    {
+                      value: "center",
+                      icon: <AlignCenter />,
+                      "aria-label": t("toolbar.align_center"),
+                    },
+                    {
+                      value: "right",
+                      icon: <AlignRight />,
+                      "aria-label": t("toolbar.align_right"),
+                    },
+                  ]}
+                />
+              </div>
+              <div className="ic-edit-style-subrow">
+                <span className="ic-edit-style-sublabel">
+                  {t("named_styles.vertical_align_label")}
+                </span>
+                <ToggleButton
+                  size="md"
+                  value={verticalAlign}
+                  onChange={setVerticalAlign}
+                  options={[
+                    {
+                      value: "top",
+                      icon: <ArrowUpToLine />,
+                      "aria-label": t("toolbar.vertical_align_top"),
+                    },
+                    {
+                      value: "center",
+                      icon: <ArrowMiddleFromLine />,
+                      "aria-label": t("toolbar.vertical_align_middle"),
+                    },
+                    {
+                      value: "bottom",
+                      icon: <ArrowDownToLine />,
+                      "aria-label": t("toolbar.vertical_align_bottom"),
+                    },
+                  ]}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <div className="ic-edit-style-styled-box ic-edit-style-format-group">
+          <Switch
+            checked={includeBorder}
+            onChange={(checked) => {
+              setIncludeBorder(checked);
+              if (!checked) {
+                setBorderColorOpen(false);
+              }
+            }}
+            label={t("named_styles.border_label")}
+          />
+          {includeBorder && (
+            <>
+              <div className="ic-edit-style-subrow">
+                <span className="ic-edit-style-sublabel">
+                  {t("named_styles.border_label")}
+                </span>
+                <div className="ic-edit-style-controls-row">
+                  <ToggleButton
+                    size="md"
+                    // "mixed" matches no option, so both show unpressed.
+                    value={
+                      allBorderSidesOn
+                        ? "all"
+                        : noBorderSidesOn
+                          ? "none"
+                          : "mixed"
+                    }
+                    onChange={(value) =>
+                      setAllBorderSides(value === "all" && !allBorderSidesOn)
+                    }
+                    options={[
+                      {
+                        value: "all",
+                        icon: <BorderOuterIcon />,
+                        "aria-label": t("toolbar.borders.all"),
+                      },
+                      {
+                        value: "none",
+                        icon: <BorderNoneIcon />,
+                        "aria-label": t("toolbar.borders.clear"),
+                      },
+                    ]}
+                  />
+                  <ToggleButton
+                    multiple
+                    size="md"
+                    value={BORDER_SIDES.filter((side) => borderSides[side])}
+                    onChange={(sides) =>
+                      setBorderSides({
+                        top: sides.includes("top"),
+                        right: sides.includes("right"),
+                        bottom: sides.includes("bottom"),
+                        left: sides.includes("left"),
+                      })
+                    }
+                    options={[
+                      {
+                        value: "top",
+                        icon: <BorderTopIcon />,
+                        "aria-label": t("toolbar.borders.top"),
+                      },
+                      {
+                        value: "right",
+                        icon: <BorderRightIcon />,
+                        "aria-label": t("toolbar.borders.right"),
+                      },
+                      {
+                        value: "bottom",
+                        icon: <BorderBottomIcon />,
+                        "aria-label": t("toolbar.borders.bottom"),
+                      },
+                      {
+                        value: "left",
+                        icon: <BorderLeftIcon />,
+                        "aria-label": t("toolbar.borders.left"),
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="ic-edit-style-subrow">
+                <span className="ic-edit-style-sublabel">
+                  {t("named_styles.line_style_label")}
+                </span>
+                <div className="ic-edit-style-controls-row">
+                  <Menu
+                    trigger={
+                      <div className="ic-input-control md ic-edit-style-line-style-wrapper">
+                        <button
+                          type="button"
+                          className="ic-edit-style-line-style-trigger"
+                          aria-label={t("toolbar.borders.style")}
+                        >
+                          <span
+                            className={`ic-line-preview ${
+                              LINE_STYLE_OPTIONS.find(
+                                (option) => option.value === borderLineStyle,
+                              )?.previewClassName ?? "thin"
+                            }`}
+                            style={{
+                              color: resolveColorToHex(
+                                borderColor,
+                                currentTheme,
+                              ),
+                            }}
+                          />
+                        </button>
+                      </div>
+                    }
+                  >
+                    {LINE_STYLE_OPTIONS.map((option) => (
+                      <MenuItem
+                        key={option.value}
+                        checked={borderLineStyle === option.value}
+                        onClick={() => setBorderLineStyle(option.value)}
+                      >
+                        <span
+                          className={`ic-line-preview ${option.previewClassName}`}
+                          style={{
+                            color: resolveColorToHex(borderColor, currentTheme),
+                          }}
+                        />
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                  <div className="ic-input-control md ic-edit-style-swatch-wrapper">
+                    <button
+                      ref={borderColorRef}
+                      type="button"
+                      className="ic-edit-style-swatch"
+                      style={{
+                        backgroundColor:
+                          resolveColorToHex(borderColor, currentTheme) ||
+                          defaultColor,
+                      }}
+                      onClick={() => setBorderColorOpen(true)}
+                      aria-label={t("toolbar.borders.color")}
+                    />
+                  </div>
+                  <ColorPicker
+                    color={borderColor}
+                    defaultColor={defaultColor}
+                    title={t("color_picker.default")}
+                    onChange={(color) => {
+                      setBorderColor(color);
+                      setBorderColorOpen(false);
+                    }}
+                    onClose={() => setBorderColorOpen(false)}
+                    anchorEl={borderColorRef}
+                    open={borderColorOpen}
+                    theme={currentTheme}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <div className="ic-edit-style-footer">

@@ -130,5 +130,13 @@
   },
   "loading_screen": {
     "message": "Caricamento di IronCalc"
+  },
+  "export": {
+    "send_as_xlsx": "Invia come .xlsx",
+    "failed": "Impossibile esportare questa cartella di lavoro come .xlsx."
+  },
+  "import": {
+    "add_sheets": "Aggiungi fogli da .xlsx",
+    "failed": "Impossibile leggere questo file come foglio di calcolo."
   }
 }

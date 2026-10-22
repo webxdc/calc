@@ -10,7 +10,7 @@
 //!    This is for user formulas. References are like `D4`, `D$4` or `F5:T10`
 //! 2. R1C1, internal or runtime mode
 //!    A reference like R1C1 refers to $A$1 and R3C4 to $D$4
-//!    R[2]C[5] refers to a cell two rows below and five columns to the right
+//!    `R[2]C[5]` refers to a cell two rows below and five columns to the right
 //!    It uses the 'en' locale and language.
 //!    This is used internally at runtime.
 //!
@@ -273,7 +273,10 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     '#' => self.consume_error(),
-                    '"' => TokenType::String(self.consume_string()),
+                    '"' => match self.consume_string() {
+                        Ok(s) => TokenType::String(s),
+                        Err(error) => TokenType::Illegal(error),
+                    },
                     '\'' => self.consume_quoted_sheet_reference(),
                     '0'..='9' => {
                         let position = self.position - 1;
@@ -509,14 +512,14 @@ impl<'a> Lexer<'a> {
         let position = self.position;
         if position >= self.len {
             return Err(self.set_error(
-                &format!("Error, expected {} found EOF", &ch_expected),
+                &format!("Error, expected {} found EOF", ch_expected),
                 self.position,
             ));
         } else {
             let ch = self.chars[position];
             if ch_expected != ch {
                 return Err(self.set_error(
-                    &format!("Error, expected {} found {}", &ch_expected, &ch),
+                    &format!("Error, expected {} found {}", ch_expected, ch),
                     self.position,
                 ));
             }
@@ -634,10 +637,11 @@ impl<'a> Lexer<'a> {
         chars
     }
 
-    fn consume_string(&mut self) -> String {
+    fn consume_string(&mut self) -> Result<String> {
         let mut position = self.position;
         let len = self.len;
         let mut chars = "".to_string();
+        let mut terminated = false;
         while position < len {
             let x = self.chars[position];
             position += 1;
@@ -648,11 +652,16 @@ impl<'a> Lexer<'a> {
                 chars.push(self.chars[position]);
                 position += 1;
             } else {
+                terminated = true;
                 break;
             }
         }
         self.position = position;
-        chars
+
+        if !terminated {
+            return Err(self.set_error("Expected closing '\"' but found end of input", position));
+        }
+        Ok(chars)
     }
 
     // Consumes a quoted string from input

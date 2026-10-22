@@ -8,25 +8,37 @@ import type { WorkbookState } from "../workbookState";
 import SheetDeleteModal from "./SheetDeleteModal";
 import { SheetTabMenu } from "./SheetTabMenu";
 import "./sheet-tab.css";
-import type { Color, IronCalcTheme } from "@ironcalc/wasm";
+import type { Color, IronCalcTheme, Model } from "@ironcalc/wasm";
 
 interface SheetTabProps {
   name: string;
   color: string;
   selected: boolean;
   onSelected: () => void;
+  canEdit: boolean;
   onColorChanged: (color: Color) => void;
   onRenamed: (name: string) => void;
   canDelete: boolean;
   onDeleted: () => void;
+  onDuplicateSheet: () => void;
   onHideSheet: () => void;
   workbookState: WorkbookState;
   currentTheme: IronCalcTheme;
+  onMoveSheet: (fromIndex: number, toIndex: number) => void;
+  model: Model;
 }
 
 function SheetTab(props: SheetTabProps) {
-  const { name, color, selected, workbookState, onSelected, currentTheme } =
-    props;
+  const {
+    name,
+    color,
+    selected,
+    workbookState,
+    onSelected,
+    currentTheme,
+    model,
+    onMoveSheet,
+  } = props;
   const { t } = useTranslation();
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +85,9 @@ function SheetTab(props: SheetTabProps) {
   }
 
   const handleOpenMenu = (event: React.MouseEvent) => {
+    if (!props.canEdit) {
+      return;
+    }
     event.stopPropagation();
     event.preventDefault();
     if (menuOpen) {
@@ -86,6 +101,9 @@ function SheetTab(props: SheetTabProps) {
   };
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!props.canEdit) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     onSelected();
@@ -99,6 +117,9 @@ function SheetTab(props: SheetTabProps) {
   };
 
   const handleStartEditing = () => {
+    if (!props.canEdit) {
+      return;
+    }
     setEditingName(name);
     setInputWidth(Math.max(name.length * 7 + 8, 6));
     setIsEditing(true);
@@ -145,7 +166,7 @@ function SheetTab(props: SheetTabProps) {
         onContextMenu={handleContextMenu}
         onPointerDown={(event) => {
           const cell = workbookState.getEditingCell();
-          if (cell && isInReferenceMode(cell.text, cell.cursorStart)) {
+          if (cell && isInReferenceMode(model, cell.text, cell.cursorStart)) {
             event.stopPropagation();
             event.preventDefault();
           }
@@ -193,17 +214,19 @@ function SheetTab(props: SheetTabProps) {
         ) : (
           <>
             <div className="ic-sheet-tab-name">{name}</div>
-            <button
-              ref={menuButtonRef}
-              className={`ic-sheet-tab-menu-button${menuOpen ? " ic-sheet-tab-menu-button--active" : ""}`}
-              onClick={handleOpenMenu}
-              type="button"
-              aria-label={t("sheet_tab.open_menu")}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-            >
-              <ChevronDown />
-            </button>
+            {props.canEdit && (
+              <button
+                ref={menuButtonRef}
+                className={`ic-sheet-tab-menu-button${menuOpen ? " ic-sheet-tab-menu-button--active" : ""}`}
+                onClick={handleOpenMenu}
+                type="button"
+                aria-label={t("sheet_tab.open_menu")}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+              >
+                <ChevronDown />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -217,8 +240,24 @@ function SheetTab(props: SheetTabProps) {
           canDelete={props.canDelete}
           onStartEditing={handleStartEditing}
           onOpenColorPicker={() => setColorPickerOpen(true)}
+          onDuplicateSheet={props.onDuplicateSheet}
           onHideSheet={props.onHideSheet}
           onDeleteSheet={() => setDeleteDialogOpen(true)}
+          onMoveLeft={() => {
+            const selectedIndex = model.getSelectedSheet();
+            if (selectedIndex > 0) {
+              onMoveSheet(selectedIndex, selectedIndex - 1);
+            }
+            handleCloseMenu();
+          }}
+          onMoveRight={() => {
+            const selectedIndex = model.getSelectedSheet();
+            const sheetCount = model.getWorksheetsProperties().length;
+            if (selectedIndex < sheetCount - 1) {
+              onMoveSheet(selectedIndex, selectedIndex + 1);
+            }
+            handleCloseMenu();
+          }}
         />
       </Menu>
 

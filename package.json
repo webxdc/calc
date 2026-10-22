@@ -1,7 +1,7 @@
 {
   "name": "Calc",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "dev:webxdc": "concurrently \"vite\" \"webxdc-dev run http://localhost:5173\"",
     "webxdc:xdc": "pnpm build && webxdc-dev run dist-xdc/calc.xdc",
-    "webxdc:dist": "pnpm build && webxdc-dev run dist"
+    "webxdc:dist": "pnpm build && webxdc-dev run dist",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../Button/Button";
 import { IconButton } from "../../Button/IconButton";
+import { Checkbox } from "../../Checkbox/Checkbox";
 import { Input } from "../../Input/Input";
 import { Select } from "../../Select/Select";
 import { Tooltip } from "../../Tooltip/Tooltip";
@@ -196,6 +197,7 @@ const ClassicRule = ({
         ruleValue,
         ruleValue2,
         resolveValue,
+        t,
       }),
     );
   }, [
@@ -205,6 +207,7 @@ const ClassicRule = ({
     ruleValue2,
     resolveValue,
     onDescriptionChange,
+    t,
   ]);
 
   return (
@@ -327,14 +330,11 @@ const ClassicRule = ({
           />
         </div>
         <div className="ic-edit-rule-section">
-          <label className="ic-edit-rule-checkbox-row">
-            <input
-              type="checkbox"
-              checked={stopIfTrue}
-              onChange={(e) => setStopIfTrue(e.target.checked)}
-            />
-            {t("conditional_formatting.stop_if_true")}
-          </label>
+          <Checkbox
+            checked={stopIfTrue}
+            onChange={setStopIfTrue}
+            label={t("conditional_formatting.stop_if_true")}
+          />
         </div>
       </div>
       <div className="ic-edit-rule-footer">

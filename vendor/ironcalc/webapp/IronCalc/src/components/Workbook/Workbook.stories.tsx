@@ -4,13 +4,38 @@ import { init, Model } from "../../index";
 import { WorkbookState } from "../workbookState";
 import Workbook from "./Workbook";
 
-function WorkbookWithInit() {
+// Optionally load the example workbook in webapp/IronCalc/tests/example.ic if
+// present. The file is gitignored, so this glob resolves to an empty object
+// when the file is missing and we fall back to a new empty workbook.
+const exampleWorkbooks = import.meta.glob("../../../tests/example.ic", {
+  query: "?url",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+async function loadModel(): Promise<Model> {
+  const exampleUrl = Object.values(exampleWorkbooks)[0];
+  if (exampleUrl) {
+    try {
+      const response = await fetch(exampleUrl);
+      if (response.ok) {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        return Model.fromBytes(bytes, "en");
+      }
+    } catch {
+      // Fall through to a new empty workbook on any fetch/parse error.
+    }
+  }
+  return new Model("Workbook1", "en", "UTC", "en");
+}
+
+function WorkbookWithInit({ canEdit }: { canEdit: boolean }) {
   const [model, setModel] = useState<Model | null>(null);
 
   useEffect(() => {
     async function start() {
       await init();
-      setModel(new Model("Workbook1", "en", "UTC", "en"));
+      setModel(await loadModel());
     }
     start();
   }, []);
@@ -20,6 +45,7 @@ function WorkbookWithInit() {
   }
   return (
     <div
+      className="ic-widget"
       style={{
         position: "absolute",
         top: 0,
@@ -28,7 +54,11 @@ function WorkbookWithInit() {
         right: 0,
       }}
     >
-      <Workbook model={model} workbookState={new WorkbookState()} />
+      <Workbook
+        model={model}
+        workbookState={new WorkbookState()}
+        canEdit={canEdit}
+      />
     </div>
   );
 }
@@ -39,8 +69,12 @@ const meta = {
   parameters: {
     layout: "fullscreen",
   },
-  argTypes: {},
-  args: {},
+  argTypes: {
+    canEdit: { control: "boolean" },
+  },
+  args: {
+    canEdit: true,
+  },
 } satisfies Meta<typeof WorkbookWithInit>;
 
 export default meta;

@@ -2,6 +2,7 @@ import type {
   BorderOptions,
   ClipboardCell,
   IronCalcTheme,
+  Link,
   Model,
   WorksheetProperties,
 } from "@ironcalc/wasm";
@@ -19,24 +20,21 @@ import RightDrawer, {
   type DrawerType,
 } from "../RightDrawer/RightDrawer";
 import SheetTabBar from "../SheetTabBar";
-import Toolbar from "../Toolbar/Toolbar";
+import Toolbar, { type MergeCellsOperation } from "../Toolbar/Toolbar";
 import {
   getCellAddress,
+  getEditorSize,
   getFullRangeToString,
   type NavigationKey,
 } from "../util";
 import Worksheet from "../Worksheet/Worksheet";
-import {
-  COLUMN_WIDTH_SCALE,
-  LAST_COLUMN,
-  LAST_ROW,
-  ROW_HEIGH_SCALE,
-} from "../WorksheetCanvas/constants";
+import { LAST_COLUMN, LAST_ROW } from "../WorksheetCanvas/constants";
 import type WorksheetCanvas from "../WorksheetCanvas/worksheetCanvas";
 import { devicePixelRatio } from "../WorksheetCanvas/worksheetCanvas";
 import type { WorkbookState } from "../workbookState";
 import useKeyboardNavigation from "./useKeyboardNavigation";
 import "./workbook.css";
+import { LinkDialog } from "../LinkDialog/LinkDialog";
 import { Alert } from "../Modal";
 
 function colorToParam(color: Color): string {
@@ -52,9 +50,16 @@ function colorToParam(color: Color): string {
 const Workbook = (props: {
   model: Model;
   workbookState: WorkbookState;
+  /** When false, the toolbar is hidden, the formula bar is read-only and all edits are blocked. */
+  canEdit?: boolean;
   externalRevision?: number;
 }) => {
-  const { model, workbookState, externalRevision = 0 } = props;
+  const {
+    model,
+    workbookState,
+    canEdit = true,
+    externalRevision = 0,
+  } = props;
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const worksheetRef = useRef<{
@@ -79,12 +84,19 @@ const Workbook = (props: {
     }
   }, [externalRevision]);
 
-  const [alertDialogMessage, setAlertDialogMessage] = useState<string | null>(
-    null,
-  );
+  const [alertDialog, setAlertDialog] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [drawerType, setDrawerType] = useState<DrawerType>("namedRanges");
+  // The cell the link dialog operates on (null when the dialog is closed)
+  const [linkDialogCell, setLinkDialogCell] = useState<{
+    sheet: number;
+    row: number;
+    column: number;
+  } | null>(null);
 
   const openDrawer = useCallback((type: DrawerType) => {
     setDrawerType(type);
@@ -96,7 +108,7 @@ const Workbook = (props: {
     ({ name, color, sheet_id, state }: WorksheetProperties) => {
       return {
         name,
-        color: model.resolveColor(color) || "#FFF",
+        color: model.resolveColor(color) || "var(--palette-common-white)",
         sheetId: sheet_id,
         state,
       };
@@ -183,6 +195,104 @@ const Workbook = (props: {
     updateRangeStyle("alignment.wrap_text", `${value}`);
   };
 
+  // The selected area, normalized (row/column is the top-left corner)
+  const getSelectedArea = () => {
+    const {
+      sheet,
+      range: [rowStart, columnStart, rowEnd, columnEnd],
+    } = model.getSelectedView();
+    return {
+      sheet,
+      row: Math.min(rowStart, rowEnd),
+      column: Math.min(columnStart, columnEnd),
+      width: Math.abs(columnEnd - columnStart) + 1,
+      height: Math.abs(rowEnd - rowStart) + 1,
+    };
+  };
+
+  const selectionIntersectsMergedCells = () => {
+    const area = getSelectedArea();
+    return model
+      .getMergedCells(area.sheet)
+      .some(
+        (m) =>
+          m.row <= area.row + area.height - 1 &&
+          m.row + m.height - 1 >= area.row &&
+          m.column <= area.column + area.width - 1 &&
+          m.column + m.width - 1 >= area.column,
+      );
+  };
+
+  // The menu merges a selection of more than one cell (as a single merged
+  // cell, centered, across or down) and unmerges a selection that intersects
+  // merged cells.
+  const onMergeCells = (operation: MergeCellsOperation) => {
+    const area = getSelectedArea();
+    try {
+      switch (operation) {
+        case "merge":
+          model.mergeCells(area);
+          break;
+        case "merge_center":
+          model.mergeCellsCenter(area);
+          break;
+        case "merge_across":
+          model.mergeCellsAcross(area);
+          break;
+        case "merge_down":
+          model.mergeCellsDown(area);
+          break;
+        case "unmerge":
+          model.unmergeCells(area);
+          break;
+      }
+    } catch (e) {
+      if (`${e}`.includes("more than one cell has content")) {
+        setAlertDialog({
+          title: t("error_dialog.error_merging_cells"),
+          message: t("error_dialog.error_merging_cells_content"),
+        });
+      }
+      // other failures (e.g. merging over an array formula) stay silent
+    }
+    setRedrawId((id) => id + 1);
+  };
+
+  // A rejected paste (e.g. it would partially cover a merged cell) gets a
+  // dialog; the merged-cell case is localized, the rest show the raw error.
+  const showPasteError = (error: unknown) => {
+    const message = `${error}`;
+    setAlertDialog({
+      title: t("error_dialog.error_paste"),
+      message: message.includes("merged cell")
+        ? t("error_dialog.error_paste_merged")
+        : message,
+    });
+  };
+
+  // Full-row and full-column selections can be neither merged nor unmerged.
+  const getMergeCellsState = () => {
+    const area = getSelectedArea();
+    if (area.width >= LAST_COLUMN || area.height >= LAST_ROW) {
+      return {
+        canMerge: false,
+        canMergeAcross: false,
+        canMergeDown: false,
+        canUnmerge: false,
+      };
+    }
+    const canUnmerge = selectionIntersectsMergedCells();
+    const canMerge = !canUnmerge && area.width * area.height > 1;
+    return {
+      canMerge,
+      // merging across (down) merges each row (column) separately, so it
+      // needs more than one column (row)
+      canMergeAcross: canMerge && area.width > 1,
+      canMergeDown: canMerge && area.height > 1,
+      canUnmerge,
+    };
+  };
+
   const onTextColorPicked = (color: Color) => {
     updateRangeStyle("font.color", colorToParam(color));
   };
@@ -240,7 +350,10 @@ const Workbook = (props: {
           }),
         );
       } catch {
-        setAlertDialogMessage(t("error_dialog.error_clipboard_paste"));
+        setAlertDialog({
+          title: t("error_dialog.error_deleting_cells"),
+          message: t("error_dialog.error_clipboard_paste"),
+        });
       }
     }
   }, [focusWorkbook, t]);
@@ -291,6 +404,7 @@ const Workbook = (props: {
   // FIXME: I *think* we should have only one on onKeyPressed function that goes to
   // the Rust backend
   const { onKeyDown } = useKeyboardNavigation({
+    canEdit,
     onCellsDeleted: (): void => {
       const {
         sheet,
@@ -310,7 +424,10 @@ const Workbook = (props: {
           column + width,
         );
       } catch (e) {
-        setAlertDialogMessage(`${e}`);
+        setAlertDialog({
+          title: t("error_dialog.error_deleting_cells"),
+          message: `${e}`,
+        });
       }
       setRedrawId((id) => id + 1);
     },
@@ -322,9 +439,12 @@ const Workbook = (props: {
     },
     onEditKeyPressStart: (initText: string): void => {
       const { sheet, row, column } = model.getSelectedView();
-      const editorWidth =
-        model.getColumnWidth(sheet, column) * COLUMN_WIDTH_SCALE;
-      const editorHeight = model.getRowHeight(sheet, row) * ROW_HEIGH_SCALE;
+      const { width: editorWidth, height: editorHeight } = getEditorSize(
+        model,
+        sheet,
+        row,
+        column,
+      );
       workbookState.setEditingCell({
         sheet,
         row,
@@ -345,9 +465,12 @@ const Workbook = (props: {
       // User presses F2, we start editing at the edn of the text
       const { sheet, row, column } = model.getSelectedView();
       const text = model.getCellContent(sheet, row, column);
-      const editorWidth =
-        model.getColumnWidth(sheet, column) * COLUMN_WIDTH_SCALE;
-      const editorHeight = model.getRowHeight(sheet, row) * ROW_HEIGH_SCALE;
+      const { width: editorWidth, height: editorHeight } = getEditorSize(
+        model,
+        sheet,
+        row,
+        column,
+      );
       workbookState.setEditingCell({
         sheet,
         row,
@@ -490,8 +613,8 @@ const Workbook = (props: {
     );
   }, [model]);
 
-  // Returns the formula value to be shown in the formula bar
-  // and whether the it is part of an array formula that cannot be edited directly
+  // Returns the formula bar value and whether it can be edited
+  // (false for array formulas)
   const getFormulaValue = (): [string, boolean] => {
     const cell = workbookState.getEditingCell();
     if (cell) {
@@ -514,7 +637,7 @@ const Workbook = (props: {
     return [model.getCellContent(sheet, row, column), true];
   };
 
-  const [formulaValue, isArrayFormula] = getFormulaValue();
+  const [formulaValue, canEditFormula] = getFormulaValue();
 
   const getCellStyle = useCallback(() => {
     const { sheet, row, column } = model.getSelectedView();
@@ -524,10 +647,42 @@ const Workbook = (props: {
   const style = getCellStyle();
   const currentTheme = model.getTheme();
 
+  const openLinkDialog = (sheet: number, row: number, column: number): void => {
+    setLinkDialogCell({ sheet, row, column });
+  };
+
+  const onSaveLink = (link: Link, label: string): void => {
+    if (!linkDialogCell) {
+      return;
+    }
+    const { sheet, row, column } = linkDialogCell;
+    // The cell content is the displayed text of the link. If the label is
+    // empty, fall back to the link target/location (for emails, just the
+    // address without the mailto parameters).
+    const text =
+      label.trim() ||
+      (link.type === "External"
+        ? link.target.replace(/^mailto:/, "").split("?")[0]
+        : link.location);
+    // Sets the link, the cell content and (for new links) the link style
+    // in a single undo step.
+    model.setCellLink(sheet, row, column, link, text);
+    setRedrawId((id) => id + 1);
+  };
+
+  const onDeleteLink = (): void => {
+    if (!linkDialogCell) {
+      return;
+    }
+    const { sheet, row, column } = linkDialogCell;
+    model.deleteCellLink(sheet, row, column);
+    setRedrawId((id) => id + 1);
+  };
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: This div needs to be focusable to handle keyboard events for the workbook
     <div
-      className="ic-workbook-container"
+      className={`ic-workbook-container${canEdit ? "" : " ic-workbook-container--readonly"}`}
       ref={rootRef}
       onKeyDown={onKeyDown}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: This div needs to be focusable to handle keyboard events for the workbook
@@ -540,6 +695,11 @@ const Workbook = (props: {
         }
       }}
       onPaste={(event: React.ClipboardEvent) => {
+        if (!canEdit) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         workbookState.clearCutRange();
         const { items } = event.clipboardData;
         if (!items) {
@@ -589,7 +749,7 @@ const Workbook = (props: {
             );
             setRedrawId((id) => id + 1);
           } catch (e) {
-            setAlertDialogMessage(`${e}`);
+            showPasteError(e);
           }
         } else if (mimeType === "text/plain") {
           const {
@@ -609,7 +769,7 @@ const Workbook = (props: {
             model.pasteCsvText(range, value);
             setRedrawId((id) => id + 1);
           } catch (e) {
-            setAlertDialogMessage(`${e}`);
+            showPasteError(e);
           }
         } else {
           // NOT IMPLEMENTED
@@ -657,6 +817,11 @@ const Workbook = (props: {
         event.stopPropagation();
       }}
       onCut={(event: React.ClipboardEvent) => {
+        if (!canEdit) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         const data = model.copyToClipboard();
         const sheet = model.getSelectedSheet();
         // '2024-10-18T14:07:37.599Z'
@@ -704,145 +869,155 @@ const Workbook = (props: {
         setRedrawId((id) => id + 1);
       }}
     >
-      <Toolbar
-        canUndo={model.canUndo()}
-        canRedo={model.canRedo()}
-        onRedo={onRedo}
-        onUndo={onUndo}
-        onToggleUnderline={onToggleUnderline}
-        onToggleBold={onToggleBold}
-        onToggleItalic={onToggleItalic}
-        onToggleStrike={onToggleStrike}
-        onToggleHorizontalAlign={onToggleHorizontalAlign}
-        onToggleVerticalAlign={onToggleVerticalAlign}
-        onToggleWrapText={onToggleWrapText}
-        onCopyStyles={onCopyStyles}
-        onTextColorPicked={onTextColorPicked}
-        onFillColorPicked={onFillColorPicked}
-        onNumberFormatPicked={onNumberFormatPicked}
-        onClearFormatting={() => {
-          const {
-            sheet,
-            range: [rowStart, columnStart, rowEnd, columnEnd],
-          } = model.getSelectedView();
-          model.rangeClearFormatting(
-            sheet,
-            rowStart,
-            columnStart,
-            rowEnd,
-            columnEnd,
-          );
-          setRedrawId((id) => id + 1);
-        }}
-        onIncreaseFontSize={(delta: number) => {
-          onIncreaseFontSize(delta);
-        }}
-        onSetFontSize={(size: number) => {
-          onSetFontSize(size);
-        }}
-        onDownloadPNG={() => {
-          // creates a new canvas element in the visible part of the the selected area
-          const worksheetCanvas = worksheetRef.current?.getCanvas();
-          if (!worksheetCanvas) {
-            return;
+      {canEdit && (
+        <Toolbar
+          canUndo={model.canUndo()}
+          canRedo={model.canRedo()}
+          onRedo={onRedo}
+          onUndo={onUndo}
+          onToggleUnderline={onToggleUnderline}
+          onToggleBold={onToggleBold}
+          onToggleItalic={onToggleItalic}
+          onToggleStrike={onToggleStrike}
+          onToggleHorizontalAlign={onToggleHorizontalAlign}
+          onToggleVerticalAlign={onToggleVerticalAlign}
+          onToggleWrapText={onToggleWrapText}
+          onCopyStyles={onCopyStyles}
+          onTextColorPicked={onTextColorPicked}
+          onFillColorPicked={onFillColorPicked}
+          onNumberFormatPicked={onNumberFormatPicked}
+          onClearFormatting={() => {
+            const {
+              sheet,
+              range: [rowStart, columnStart, rowEnd, columnEnd],
+            } = model.getSelectedView();
+            model.rangeClearFormatting(
+              sheet,
+              rowStart,
+              columnStart,
+              rowEnd,
+              columnEnd,
+            );
+            setRedrawId((id) => id + 1);
+          }}
+          onIncreaseFontSize={(delta: number) => {
+            onIncreaseFontSize(delta);
+          }}
+          onSetFontSize={(size: number) => {
+            onSetFontSize(size);
+          }}
+          onDownloadPNG={() => {
+            // creates a new canvas element in the visible part of the the selected area
+            const worksheetCanvas = worksheetRef.current?.getCanvas();
+            if (!worksheetCanvas) {
+              return;
+            }
+            const {
+              range: [rowStart, columnStart, rowEnd, columnEnd],
+            } = model.getSelectedView();
+            // NB: cells outside of the displayed area are not rendered
+            // I think the only reasonable way to do this would be server side.
+            let [x, y] = worksheetCanvas.getCoordinatesByCell(
+              rowStart,
+              columnStart,
+            );
+            const [x1, y1] = worksheetCanvas.getCoordinatesByCell(
+              rowEnd + 1,
+              columnEnd + 1,
+            );
+            const width = (x1 - x) * devicePixelRatio;
+            const height = (y1 - y) * devicePixelRatio;
+            x *= devicePixelRatio;
+            y *= devicePixelRatio;
+
+            const capturedCanvas = document.createElement("canvas");
+            capturedCanvas.width = width;
+            capturedCanvas.height = height;
+            const ctx = capturedCanvas.getContext("2d");
+            if (!ctx) {
+              return;
+            }
+
+            ctx.drawImage(
+              worksheetCanvas.canvas,
+              x,
+              y,
+              width,
+              height,
+              0,
+              0,
+              width,
+              height,
+            );
+
+            const downloadLink = document.createElement("a");
+            downloadLink.href = capturedCanvas.toDataURL("image/png");
+            downloadLink.download = "ironcalc.png";
+            downloadLink.click();
+          }}
+          onBorderChanged={(border: BorderOptions): void => {
+            const {
+              sheet,
+              range: [rowStart, columnStart, rowEnd, columnEnd],
+            } = model.getSelectedView();
+            const row = Math.min(rowStart, rowEnd);
+            const column = Math.min(columnStart, columnEnd);
+
+            const width = Math.abs(columnEnd - columnStart) + 1;
+            const height = Math.abs(rowEnd - rowStart) + 1;
+            const borderArea = {
+              type: border.border,
+              item: border,
+            };
+            model.setAreaWithBorder(
+              { sheet, row, column, width, height },
+              borderArea,
+            );
+            setRedrawId((id) => id + 1);
+          }}
+          fillColor={style.fill.color}
+          fontColor={style.font.color}
+          fontSize={style.font.sz}
+          bold={style.font.b}
+          underline={style.font.u}
+          italic={style.font.i}
+          strike={style.font.strike}
+          horizontalAlign={
+            style.alignment ? style.alignment.horizontal : "general"
           }
-          const {
-            range: [rowStart, columnStart, rowEnd, columnEnd],
-          } = model.getSelectedView();
-          // NB: cells outside of the displayed area are not rendered
-          // I think the only reasonable way to do this would be server side.
-          let [x, y] = worksheetCanvas.getCoordinatesByCell(
-            rowStart,
-            columnStart,
-          );
-          const [x1, y1] = worksheetCanvas.getCoordinatesByCell(
-            rowEnd + 1,
-            columnEnd + 1,
-          );
-          const width = (x1 - x) * devicePixelRatio;
-          const height = (y1 - y) * devicePixelRatio;
-          x *= devicePixelRatio;
-          y *= devicePixelRatio;
-
-          const capturedCanvas = document.createElement("canvas");
-          capturedCanvas.width = width;
-          capturedCanvas.height = height;
-          const ctx = capturedCanvas.getContext("2d");
-          if (!ctx) {
-            return;
+          verticalAlign={
+            style.alignment?.vertical ? style.alignment.vertical : "bottom"
           }
-
-          ctx.drawImage(
-            worksheetCanvas.canvas,
-            x,
-            y,
-            width,
-            height,
-            0,
-            0,
-            width,
-            height,
-          );
-
-          const downloadLink = document.createElement("a");
-          downloadLink.href = capturedCanvas.toDataURL("image/png");
-          downloadLink.download = "ironcalc.png";
-          downloadLink.click();
-        }}
-        onBorderChanged={(border: BorderOptions): void => {
-          const {
-            sheet,
-            range: [rowStart, columnStart, rowEnd, columnEnd],
-          } = model.getSelectedView();
-          const row = Math.min(rowStart, rowEnd);
-          const column = Math.min(columnStart, columnEnd);
-
-          const width = Math.abs(columnEnd - columnStart) + 1;
-          const height = Math.abs(rowEnd - rowStart) + 1;
-          const borderArea = {
-            type: border.border,
-            item: border,
-          };
-          model.setAreaWithBorder(
-            { sheet, row, column, width, height },
-            borderArea,
-          );
-          setRedrawId((id) => id + 1);
-        }}
-        fillColor={model.resolveColor(style.fill.color) || "#FFFFFF"}
-        fontColor={model.resolveColor(style.font.color) || "#000000"}
-        fontSize={style.font.sz}
-        bold={style.font.b}
-        underline={style.font.u}
-        italic={style.font.i}
-        strike={style.font.strike}
-        horizontalAlign={
-          style.alignment ? style.alignment.horizontal : "general"
-        }
-        verticalAlign={
-          style.alignment?.vertical ? style.alignment.vertical : "bottom"
-        }
-        wrapText={style.alignment?.wrap_text || false}
-        canEdit={true}
-        numFmt={style.num_fmt}
-        showGridLines={model.getShowGridLines(model.getSelectedSheet())}
-        onToggleShowGridLines={(show) => {
-          const sheet = model.getSelectedSheet();
-          model.setShowGridLines(sheet, show);
-          setRedrawId((id) => id + 1);
-        }}
-        formatOptions={fmtSettings}
-        onOpenConditionalFormatting={() => openDrawer("conditionalFormatting")}
-        isConditionalFormattingOpen={
-          isDrawerOpen && drawerType === "conditionalFormatting"
-        }
-        onOpenNamedStyles={() => openDrawer("namedStyles")}
-        isNamedStylesOpen={isDrawerOpen && drawerType === "namedStyles"}
-        themes={themes}
-        currentTheme={currentTheme}
-        onThemePicked={handleThemePicked}
-        onOpenThemes={() => openDrawer("themes")}
-      />
+          wrapText={style.alignment?.wrap_text || false}
+          mergeCellsState={getMergeCellsState()}
+          onMergeCells={onMergeCells}
+          canEdit={true}
+          numFmt={style.num_fmt}
+          showGridLines={model.getShowGridLines(model.getSelectedSheet())}
+          onToggleShowGridLines={(show) => {
+            const sheet = model.getSelectedSheet();
+            model.setShowGridLines(sheet, show);
+            setRedrawId((id) => id + 1);
+          }}
+          formatOptions={fmtSettings}
+          onOpenConditionalFormatting={() =>
+            openDrawer("conditionalFormatting")
+          }
+          isConditionalFormattingOpen={
+            isDrawerOpen && drawerType === "conditionalFormatting"
+          }
+          onOpenNamedStyles={() => openDrawer("namedStyles")}
+          isNamedStylesOpen={isDrawerOpen && drawerType === "namedStyles"}
+          onOpenLinkDialog={() => {
+            const { sheet, row, column } = model.getSelectedView();
+            openLinkDialog(sheet, row, column);
+          }}
+          themes={themes}
+          currentTheme={currentTheme}
+          onThemePicked={handleThemePicked}
+          onOpenThemes={() => openDrawer("themes")}
+        />
+      )}
       <div
         className="ic-workbook-worksheet-area-left"
         style={{
@@ -864,7 +1039,7 @@ const Workbook = (props: {
           openDrawer={() => {
             openDrawer("namedRanges");
           }}
-          canEdit={isArrayFormula}
+          canEdit={canEdit && canEditFormula}
         />
         <Worksheet
           model={model}
@@ -873,7 +1048,7 @@ const Workbook = (props: {
             setRedrawId((id) => id + 1);
           }}
           ref={worksheetRef}
-          canEdit={isArrayFormula}
+          canEdit={canEdit && canEditFormula}
           onCut={(): void => {
             focusWorkbook();
             document.execCommand("cut");
@@ -883,9 +1058,25 @@ const Workbook = (props: {
             document.execCommand("copy");
           }}
           onPaste={handlePaste}
+          onEditLink={
+            canEdit
+              ? (row: number, column: number): void => {
+                  openLinkDialog(model.getSelectedSheet(), row, column);
+                }
+              : undefined
+          }
+          onDeleteLink={
+            canEdit
+              ? (row: number, column: number): void => {
+                  model.deleteCellLink(model.getSelectedSheet(), row, column);
+                  setRedrawId((id) => id + 1);
+                }
+              : undefined
+          }
         />
 
         <SheetTabBar
+          canEdit={canEdit}
           sheets={info}
           selectedIndex={model.getSelectedSheet()}
           workbookState={workbookState}
@@ -923,9 +1114,23 @@ const Workbook = (props: {
             model.deleteSheet(selectedSheet);
             setRedrawId((value) => value + 1);
           }}
+          onSheetDuplicated={(): void => {
+            try {
+              const selectedSheet = model.getSelectedSheet();
+              model.duplicateSheet(selectedSheet);
+              setRedrawId((value) => value + 1);
+            } catch (e) {
+              // TODO: Show a proper modal dialog
+              alert(`${e}`);
+            }
+          }}
           onHideSheet={(): void => {
             const selectedSheet = model.getSelectedSheet();
             model.hideSheet(selectedSheet);
+            setRedrawId((value) => value + 1);
+          }}
+          onMoveSheet={(fromIndex: number, toIndex: number): void => {
+            model.moveSheet(fromIndex, toIndex);
             setRedrawId((value) => value + 1);
           }}
           onOpenRegionalSettings={() => {
@@ -971,7 +1176,11 @@ const Workbook = (props: {
         }}
         onAddNamedStyle={(payload): SaveError => {
           try {
-            model.createNamedStyle(payload.name, payload.style);
+            model.createNamedStyle(
+              payload.name,
+              payload.style,
+              payload.includes,
+            );
             setRedrawId((id) => id + 1);
             return { nameError: "" };
           } catch (e) {
@@ -980,7 +1189,12 @@ const Workbook = (props: {
         }}
         onUpdateNamedStyle={(originalName, payload): SaveError => {
           try {
-            model.updateNamedStyle(originalName, payload.name, payload.style);
+            model.updateNamedStyle(
+              originalName,
+              payload.name,
+              payload.style,
+              payload.includes,
+            );
             setRedrawId((id) => id + 1);
             return { nameError: "" };
           } catch (e) {
@@ -1002,11 +1216,35 @@ const Workbook = (props: {
         }}
       />
       <Alert
-        open={alertDialogMessage !== null}
-        onClose={() => setAlertDialogMessage(null)}
-        title={t("error_dialog.error_deleting_cells")}
-        message={alertDialogMessage}
+        open={alertDialog !== null}
+        onClose={() => setAlertDialog(null)}
+        title={alertDialog?.title ?? ""}
+        message={alertDialog?.message ?? ""}
       />
+      {linkDialogCell && (
+        <LinkDialog
+          open
+          onClose={() => setLinkDialogCell(null)}
+          sheetNames={worksheets.map((sheet) => sheet.name)}
+          selectedSheetName={
+            worksheets[linkDialogCell.sheet]?.name ?? worksheets[0]?.name ?? ""
+          }
+          initialLink={
+            model.getCellLink(
+              linkDialogCell.sheet,
+              linkDialogCell.row,
+              linkDialogCell.column,
+            ) ?? null
+          }
+          initialLabel={model.getFormattedCellValue(
+            linkDialogCell.sheet,
+            linkDialogCell.row,
+            linkDialogCell.column,
+          )}
+          onSave={onSaveLink}
+          onDelete={onDeleteLink}
+        />
+      )}
     </div>
   );
 };

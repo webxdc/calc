@@ -1,13 +1,14 @@
-import type { Model, NamedStyle } from "@ironcalc/wasm";
-import { PencilLine, Trash2 } from "lucide-react";
+import type { FmtSettings, Model, NamedStyle } from "@ironcalc/wasm";
+import { PackageOpen, PencilLine, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "../../Button/IconButton";
 import { Tooltip } from "../../Tooltip/Tooltip";
-import { getTileStyle } from "./named-styles-utils";
+import { getPreviewText, getTileStyle } from "./named-styles-utils";
 
 interface ManageCustomStylesProps {
   model: Model;
   customStyles: NamedStyle[];
+  formatOptions: FmtSettings;
   onEdit: (style: NamedStyle) => void;
   onDelete: (style: NamedStyle) => void;
 }
@@ -15,10 +16,25 @@ interface ManageCustomStylesProps {
 const ManageCustomStyles = ({
   model,
   customStyles,
+  formatOptions,
   onEdit,
   onDelete,
 }: ManageCustomStylesProps) => {
   const { t } = useTranslation();
+
+  if (customStyles.length === 0) {
+    return (
+      <div className="ic-named-styles-empty-state-message">
+        <div className="ic-named-styles-icon-wrapper">
+          <PackageOpen />
+        </div>
+        {t("named_styles.empty_message1")}
+        <br />
+        {t("named_styles.empty_message2")}
+      </div>
+    );
+  }
+
   return (
     <div className="ic-named-styles-manage-list">
       {customStyles.map((s) => (
@@ -27,7 +43,7 @@ const ManageCustomStyles = ({
             className="ic-named-styles-manage-item-preview"
             style={getTileStyle(model, s.style)}
           >
-            Aa
+            {getPreviewText(s.style.num_fmt, formatOptions, t)}
           </div>
           <div className="ic-named-styles-manage-item-name">{s.name}</div>
           <div className="ic-named-styles-manage-item-icons">

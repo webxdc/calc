@@ -3,9 +3,13 @@ import styled from "@emotion/styled";
 import { useEffect, useRef, useState } from "react";
 import {
   createNewModel,
+  hasGeneratedName,
   loadSelectedModelFromStorage,
   saveSelectedModelInStorage,
+  updateNameSelectedWorkbook,
 } from "./components/storage";
+import { mergeSheetsInto } from "./components/importXlsx";
+import FileActions from "./components/FileActions";
 
 // From IronCalc
 import { IronCalc, IronCalcIcon, Model, init } from "@ironcalc/workbook";
@@ -112,8 +116,31 @@ function App() {
     }
   }, [uuid])
 
+  // Adds the sheets of an imported file to the workbook we already have.
+  //
+  // This goes through ordinary editing operations, so the outgoing interval
+  // below picks the changes up and the peers receive plain diffs.
+  function importSheets(source: Model) {
+    const model = modelRef.current;
+    if (!model) {
+      return
+    }
+    // The imported workbook is named after the file it came from. Merging
+    // discards it, so take it now.
+    const importedName = source.getName();
+    mergeSheetsInto(model, source);
+    if (hasGeneratedName(model)) {
+      model.setName(importedName);
+      updateNameSelectedWorkbook(model, importedName);
+    }
+    saveSelectedModelInStorage(model);
+    // The model is mutated in place, so its identity is unchanged; bump the
+    // revision to make IronCalc repaint with the new sheets.
+    setExternalRevision((revision) => revision + 1);
+  }
+
   // React by default uses StrictMode in dev to flush out bugs. This invokes
-  // useEffect twice. But webxdc expects a single update listener registration. 
+  // useEffect twice. But webxdc expects a single update listener registration.
   // This ref is to make sure it's registered only once.
   const listenerRegistered = useRef(false);
 
@@ -166,6 +193,7 @@ function App() {
   return (
     <Wrapper>
       <IronCalc model={model} externalRevision={externalRevision} />
+      <FileActions model={model} onImported={importSheets} />
     </Wrapper>
   );
 }
@@ -210,4 +238,3 @@ function get_or_create_uuid(): string {
   localStorage.setItem("uuid", newUuid);
   return newUuid
 }
-

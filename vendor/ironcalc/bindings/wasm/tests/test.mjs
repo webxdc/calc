@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert'
-import { Model } from "../pkg/wasm.js";
+import { Model } from "../pkg-nodejs/wasm.js";
 
 const DEFAULT_ROW_HEIGHT = 25;
 
@@ -196,4 +196,124 @@ test("move columns", () => {
     assert.strictEqual(model.getCellContent(0, 5, 5), "=SUM(H3:J7)");
     assert.strictEqual(model.getCellContent(0, 6, 5), "=SUM(H3:H7)");
     assert.strictEqual(model.getCellContent(0, 7, 5), "=SUM(G3:G7)");
+});
+
+test('Cell links', () => {
+    const model = new Model('Workbook1', 'en', 'UTC', 'en');
+    assert.strictEqual(model.getCellLink(0, 2, 2), undefined);
+
+    model.setCellLink(0, 2, 2, { type: "External", target: "https://www.ironcalc.com/" });
+    const link = model.getCellLink(0, 2, 2);
+    assert.strictEqual(link.type, "External");
+    assert.strictEqual(link.target, "https://www.ironcalc.com/");
+
+    model.setCellLink(0, 5, 1, { type: "Internal", location: "Sheet1!A30", tooltip: "Jump!" });
+    const links = model.getLinks(0);
+    assert.strictEqual(links.length, 2);
+    assert.strictEqual(links[0].row, 2);
+    assert.strictEqual(links[0].column, 2);
+    assert.strictEqual(links[0].target, "https://www.ironcalc.com/");
+    assert.strictEqual(links[1].row, 5);
+    assert.strictEqual(links[1].column, 1);
+    assert.strictEqual(links[1].location, "Sheet1!A30");
+    assert.strictEqual(links[1].tooltip, "Jump!");
+
+    // links are undoable
+    model.undo();
+    model.undo();
+    assert.strictEqual(model.getCellLink(0, 2, 2), undefined);
+    model.redo();
+    assert.strictEqual(model.getCellLink(0, 2, 2).target, "https://www.ironcalc.com/");
+
+    model.deleteCellLink(0, 2, 2);
+    assert.strictEqual(model.getCellLink(0, 2, 2), undefined);
+
+    // invalid cell
+    assert.throws(() => model.setCellLink(0, 0, 1, { type: "External", target: "https://x" }));
+});
+
+test('Cell link label and style are one undo step', () => {
+    const model = new Model('Workbook1', 'en', 'UTC', 'en');
+    model.setCellLink(0, 2, 2, { type: "External", target: "https://www.ironcalc.com/" }, "IronCalc");
+    assert.strictEqual(model.getFormattedCellValue(0, 2, 2), "IronCalc");
+    assert.strictEqual(model.getCellStyle(0, 2, 2).style.font.u, true);
+
+    // one undo reverts the link, the content and the style together
+    model.undo();
+    assert.strictEqual(model.getCellLink(0, 2, 2), undefined);
+    assert.strictEqual(model.getFormattedCellValue(0, 2, 2), "");
+    assert.ok(!model.getCellStyle(0, 2, 2).style.font.u);
+    assert.strictEqual(model.canUndo(), false);
+
+    // one redo restores everything
+    model.redo();
+    assert.strictEqual(model.getFormattedCellValue(0, 2, 2), "IronCalc");
+    assert.strictEqual(model.getCellStyle(0, 2, 2).style.font.u, true);
+    assert.strictEqual(model.getCellLink(0, 2, 2).target, "https://www.ironcalc.com/");
+});
+
+test('Merged cells', () => {
+    const model = new Model('Workbook1', 'en', 'UTC', 'en');
+    model.setUserInput(0, 2, 2, "5");
+    model.setUserInput(0, 3, 3, "hello");
+
+    // merging a range where more than one cell has content fails
+    assert.throws(
+        () => model.mergeCells({ sheet: 0, row: 2, column: 2, width: 2, height: 2 }),
+        /more than one cell has content/,
+    );
+    assert.deepEqual(model.getMergedCells(0), []);
+
+    // with a single cell with content, its content moves to the anchor
+    model.setUserInput(0, 2, 2, "");
+    model.mergeCells({ sheet: 0, row: 2, column: 2, width: 2, height: 2 });
+    assert.deepEqual(model.getMergedCells(0), [{ row: 2, column: 2, width: 2, height: 2 }]);
+    assert.strictEqual(model.getFormattedCellValue(0, 2, 2), "hello");
+    assert.strictEqual(model.getFormattedCellValue(0, 3, 3), "");
+    // covered cells cannot be edited
+    assert.throws(() => model.setUserInput(0, 3, 3, "42"));
+
+    model.undo();
+    assert.deepEqual(model.getMergedCells(0), []);
+    assert.strictEqual(model.getFormattedCellValue(0, 2, 2), "");
+    assert.strictEqual(model.getFormattedCellValue(0, 3, 3), "hello");
+
+    model.redo();
+    model.unmergeCells({ sheet: 0, row: 1, column: 1, width: 10, height: 10 });
+    assert.deepEqual(model.getMergedCells(0), []);
+    model.setUserInput(0, 3, 3, "42");
+    assert.strictEqual(model.getFormattedCellValue(0, 3, 3), "42");
+});
+
+test('Merge cells variants', () => {
+    const model = new Model('Workbook1', 'en', 'UTC', 'en');
+
+    // merge & center: merging and centering are a single undo step
+    model.setUserInput(0, 2, 2, "5");
+    model.mergeCellsCenter({ sheet: 0, row: 2, column: 2, width: 2, height: 2 });
+    assert.deepEqual(model.getMergedCells(0), [{ row: 2, column: 2, width: 2, height: 2 }]);
+    assert.strictEqual(model.getCellStyle(0, 2, 2).style.alignment.horizontal, "center");
+    model.undo();
+    assert.deepEqual(model.getMergedCells(0), []);
+    assert.strictEqual(model.getCellStyle(0, 2, 2).style.alignment, undefined);
+    model.undo();
+
+    // merge across: one merged cell per row, a single undo step
+    model.mergeCellsAcross({ sheet: 0, row: 2, column: 2, width: 2, height: 3 });
+    assert.deepEqual(model.getMergedCells(0), [
+        { row: 2, column: 2, width: 2, height: 1 },
+        { row: 3, column: 2, width: 2, height: 1 },
+        { row: 4, column: 2, width: 2, height: 1 },
+    ]);
+    model.undo();
+    assert.deepEqual(model.getMergedCells(0), []);
+
+    // merge down: one merged cell per column, a single undo step
+    model.mergeCellsDown({ sheet: 0, row: 2, column: 2, width: 2, height: 3 });
+    assert.deepEqual(model.getMergedCells(0), [
+        { row: 2, column: 2, width: 1, height: 3 },
+        { row: 2, column: 3, width: 1, height: 3 },
+    ]);
+    model.undo();
+    assert.deepEqual(model.getMergedCells(0), []);
 });

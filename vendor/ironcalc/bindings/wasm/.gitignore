@@ -1,1 +1,5 @@
 target/*
+pkg-xlsx/
+pkg-nodejs/
+pkg-nodejs-xlsx/
+types.js

@@ -39,16 +39,25 @@
 import type { Model } from "@ironcalc/wasm";
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { FormulaHelper } from "../FormulaHelper/FormulaHelper";
+import {
+  applyListCompletion,
+  getCompletion,
+} from "../FormulaHelper/formulaCompletion";
 import { Alert } from "../Modal";
+import { useMenuPosition } from "../utils/useMenuPosition";
 import type { WorkbookState } from "../workbookState";
 import useKeyDown from "./useKeyDown";
 import getFormulaHTML from "./util";
+import "./editor.css";
+import { createAnchoredPortal } from "../createAnchoredPortal";
 
 const commonCSS: CSSProperties = {
   fontWeight: "inherit",
@@ -63,7 +72,7 @@ const commonCSS: CSSProperties = {
   lineHeight: "22px",
 };
 
-const caretColor = "rgb(242, 153, 74)";
+const caretColor = "var(--palette-primary-main)";
 
 interface EditorOptions {
   originalText: string;
@@ -88,7 +97,13 @@ const Editor = (options: EditorOptions) => {
 
   const { t } = useTranslation();
   const [text, setText] = useState(originalText);
+  const [cursor, setCursor] = useState(originalText.length);
   const [formulaError, setFormulaError] = useState<string | null>(null);
+  // Formula helper popup state: the highlighted row in list mode and whether
+  // the user dismissed it with Escape. The popup itself is rendered via a
+  // portal, to escape `overflow: hidden`.
+  const [helperSelected, setHelperSelected] = useState(0);
+  const [helperDismissed, setHelperDismissed] = useState(false);
 
   const formulaRef = useRef<HTMLDivElement>(null);
   const maskRef = useRef<HTMLDivElement>(null);
@@ -96,10 +111,31 @@ const Editor = (options: EditorOptions) => {
 
   useEffect(() => {
     setText(originalText);
-    if (textareaRef.current) {
-      textareaRef.current.value = originalText;
+    const textarea = textareaRef.current;
+    // Only rewrite the textarea (and snap the caret to the end) when the value
+    // changed from the OUTSIDE — a different cell selected, or a new edit
+    // session. While the user types, `originalText` is derived from the same
+    // text being edited and flows back in unchanged, so the DOM value already
+    // matches; rewriting here would yank the caret to the end on every
+    // keystroke (and break clicking in the middle).
+    if (textarea && textarea.value !== originalText) {
+      textarea.value = originalText;
+      // If the value changed because a reference is being inserted at the cursor
+      // (cruise mode: clicking/dragging cells in the grid), keep the caret right
+      // after the inserted reference. Snapping to the end is only correct when
+      // the reference sits at the end of the formula; in the middle it would
+      // strand the caret past the rest of the text.
+      const cell = workbookState.getEditingCell();
+      const referencedStr = cell?.referencedRange?.str;
+      if (cell && referencedStr) {
+        const caret = cell.cursorStart + referencedStr.length;
+        textarea.setSelectionRange(caret, caret);
+        setCursor(caret);
+      } else {
+        setCursor(originalText.length);
+      }
     }
-  }, [originalText]);
+  }, [originalText, workbookState]);
 
   const { onKeyDown } = useKeyDown({
     model,
@@ -150,6 +186,7 @@ const Editor = (options: EditorOptions) => {
 
     workbookState.setActiveRanges(styledFormula.activeRanges);
     setText(cell.text);
+    setCursor(textarea.selectionStart);
 
     onTextUpdated();
 
@@ -186,9 +223,103 @@ const Editor = (options: EditorOptions) => {
 
   const cell = workbookState.getEditingCell();
 
-  const showEditor = cell !== null || type === "formula-bar" ? "block" : "none";
+  const showEditor = cell !== null || type === "formula-bar";
   const mtext = cell ? workbookState.getEditingText() : originalText;
-  const styledFormula = getFormulaHTML(model, mtext).html;
+  // In read-only mode the formula is rendered as plain grey text
+  const styledFormula = canEdit
+    ? getFormulaHTML(model, mtext, cursor).html
+    : mtext;
+
+  // For now formula helper is only available in English, so we hide it for other languages.
+  // This is a temporary measure until we have a more robust solution for localization.
+  const language = model.getLanguage();
+  const locale = model.getLocale();
+  const helperAvailable = language === "en" && locale === "en";
+
+  // The formula helper is shown while editing a formula in whichever editor
+  // currently has focus — the cell editor or the formula bar (both render this
+  // same component). Gating on `cell.focus === type` keeps a single popup. We
+  // compute the completion here so the keyboard handler and the popup share one
+  // source.
+  const helperActive =
+    helperAvailable &&
+    cell !== null &&
+    cell.focus === type &&
+    text.startsWith("=") &&
+    !helperDismissed;
+  const completion = helperActive ? getCompletion(model, text, cursor) : null;
+
+  const showHelper = helperAvailable && completion !== null;
+
+  // Reset the highlighted row whenever the formula or caret changes (typing,
+  // clicking); arrow-key navigation is preventDefaulted so it does not land
+  // here. Editing the text also clears a previous Escape dismissal.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on edit/caret
+  useEffect(() => {
+    setHelperSelected(0);
+  }, [text, cursor]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on text edit
+  useEffect(() => {
+    setHelperDismissed(false);
+  }, [text]);
+
+  // Anchor the popup to the textarea, flipping above / right-aligning it when
+  // it would overflow the viewport.
+  const { menuRef: helperRef, position: helperPosition } = useMenuPosition(
+    showHelper,
+    textareaRef,
+  );
+
+  // Replace the partial function name with `NAME(` and place the caret inside.
+  // Takes an explicit index so a row click can accept the row it lands on directly.
+  const acceptHelperFunction = (index: number = helperSelected) => {
+    const textarea = textareaRef.current;
+    if (!textarea || completion?.kind !== "list") {
+      return;
+    }
+    const result = applyListCompletion(
+      textarea.value,
+      textarea.selectionStart,
+      completion,
+      index,
+    );
+    textarea.value = result.text;
+    textarea.setSelectionRange(result.cursor, result.cursor);
+    onChange();
+  };
+
+  // Let the helper consume navigation keys before the editor's own handler.
+  // Returns true when the event was handled.
+  const handleHelperKeyDown = (
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ): boolean => {
+    if (!completion) {
+      return false;
+    }
+    if (event.key === "Escape") {
+      setHelperDismissed(true);
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+    if (completion.kind !== "list") {
+      return false;
+    }
+    if (event.key === "ArrowDown") {
+      setHelperSelected((value) =>
+        Math.min(value + 1, completion.matches.length - 1),
+      );
+    } else if (event.key === "ArrowUp") {
+      setHelperSelected((value) => Math.max(value - 1, 0));
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      acceptHelperFunction();
+    } else {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
 
   return (
     <>
@@ -199,16 +330,7 @@ const Editor = (options: EditorOptions) => {
         message={formulaError ?? undefined}
       />
       <div
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-          display: showEditor,
-          background: "#FFF",
-          fontFamily: "var(--palette-sheet-default-cell-font-family)",
-          fontSize: "13px",
-        }}
+        className={`ic-editor-container${showEditor ? "" : " ic-editor-container--hidden"}${canEdit ? "" : " ic-editor-container--readonly"}`}
       >
         <div
           ref={maskRef}
@@ -246,6 +368,9 @@ const Editor = (options: EditorOptions) => {
           defaultValue={text}
           spellCheck="false"
           onKeyDown={(event) => {
+            if (handleHelperKeyDown(event)) {
+              return;
+            }
             try {
               onKeyDown(event);
             } catch (error) {
@@ -284,12 +409,35 @@ const Editor = (options: EditorOptions) => {
               maskRef.current.style.top = `-${textareaRef.current.scrollTop}px`;
             }
           }}
+          onSelect={(event) => {
+            // Track caret moves (arrows, clicks) so the helper follows along.
+            setCursor(event.currentTarget.selectionStart);
+          }}
           onPaste={(event) => event.stopPropagation()}
           onCopy={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onCut={(event) => event.stopPropagation()}
         />
       </div>
+      {showHelper
+        ? createAnchoredPortal(
+            <div
+              ref={helperRef}
+              style={{
+                position: "fixed",
+                ...helperPosition,
+              }}
+            >
+              <FormulaHelper
+                completion={completion}
+                selected={helperSelected}
+                onSelect={setHelperSelected}
+                onAccept={acceptHelperFunction}
+              />
+            </div>,
+            textareaRef.current,
+          )
+        : null}
     </>
   );
 };

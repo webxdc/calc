@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+[Unreleased]
+
+### Fixed
+
+- sync errors: changes were not shared with other peers
+
+- language conflicts: different local settings caused broken number format and formulas
+
+### Feature
+
+- export current workbook as xlsx file
+
+- import xlsx files into current workbook (adds all sheets from imported file)
+
+### Tooling
+
+- add playwright tests `pnpm test`
+
+### Build
+
+- upgrade to IronCalc 0.8.3 (xlsx package)
+
 ## [1.1.0] - 2026-07-10
 
 ### Fixed

@@ -7,6 +7,8 @@ mod clipboard;
 mod common;
 mod conditional_formatting;
 pub(crate) mod history;
+mod links;
+mod merged_cells;
 mod named_cell_styles;
 mod sequence_detector;
 mod ui;

@@ -315,6 +315,23 @@ pub struct ConditionalFormatting {
     pub priority: u32,
 }
 
+/// A conditional formatting rule together with its storage `index` in the
+/// worksheet's `conditional_formatting` vector.
+///
+/// `get_conditional_formatting_list` returns rules sorted by priority, which
+/// loses the link to the storage index that the index-based mutators
+/// (`get_dxf_for_conditional_formatting`, `update_conditional_formatting`,
+/// `delete_conditional_formatting`, `raise`/`lower_conditional_formatting_priority`)
+/// require. Carrying `index` here lets callers address a rule unambiguously
+/// regardless of the display ordering. This type is transient (never persisted).
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct ConditionalFormattingView {
+    pub index: usize,
+    pub range: String,
+    pub cf_rule: CfRule,
+    pub priority: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Evaluated CF result for a single cell (transient, not stored in Workbook).
 // ---------------------------------------------------------------------------
@@ -332,7 +349,7 @@ pub(crate) enum CfCellResult {
         negative_color: Color,
         is_gradient: bool,
         value: f64,
-        /// Proportion [0,1] at which the zero axis falls within the cell width.
+        /// Proportion \[0,1\] at which the zero axis falls within the cell width.
         axis_position: f64,
         show_value: bool,
     },
@@ -372,7 +389,7 @@ pub struct CfDataBar {
     pub is_gradient: bool,
     /// Proportion of the bar to fill, in \[0.0, 1.0\].
     pub value: f64,
-    /// Proportion [0,1] at which the zero axis falls within the cell width.
+    /// Proportion \[0,1\] at which the zero axis falls within the cell width.
     pub axis_position: f64,
     pub show_value: bool,
 }

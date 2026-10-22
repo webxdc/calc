@@ -6,15 +6,19 @@
 //! In IronCalc _all_ formulas are shared and there is a list of shared formulas much like there is a list of shared strings.
 //! In Excel the situation in more nuanced. A shared formula is shared amongst a rage of cells.
 //! The top left cell would be the "mother" cell that would contain the shared formula:
+//! ```xml
 //! <c r="F4" t="str">
 //!    <f t="shared" ref="F4:F8" si="42">A4+C4</f>
 //!    <v>123</v>
 //! </c>
+//! ```
 //! Cells in the range F4:F8 will then link to that formula like so:
+//! ```xml
 //! <c r="F6">
 //!   <f t="shared" si="42"/>
 //!   <v>1</v>
 //! </c>
+//! ```
 //! Formula in F6 would then be 'A6+C6'
 use std::collections::HashMap;
 
@@ -26,7 +30,7 @@ use ironcalc_base::{
         types::CellReferenceRC,
         utils::number_to_column,
     },
-    types::{ArrayKind, Cell, FormulaValue, SpillValue, Worksheet},
+    types::{ArrayKind, Cell, FormulaValue, Link, SpillValue, Worksheet},
 };
 
 use crate::export::conditional_formatting::get_conditional_formatting_xml;
@@ -46,6 +50,98 @@ fn get_cell_style_attribute(s: i32) -> String {
     } else {
         format!(" s=\"{s}\"")
     }
+}
+
+/// The links of the worksheet sorted by (row, column) so that both the
+/// `<hyperlinks>` section and the sheet rels assign relationship ids in the
+/// same, deterministic order.
+fn get_sorted_links(worksheet: &Worksheet) -> Vec<((i32, i32), &Link)> {
+    worksheet
+        .links
+        .iter()
+        .map(|(k, v)| (*k, v))
+        .sorted_by_key(|x| x.0)
+        .collect()
+}
+
+/// An external link whose target is `scheme://host/path#location` is exported with the
+/// fragment in the `location` attribute of the `<hyperlink>` element, matching what
+/// Excel does. Returns (target, location).
+fn split_external_target(target: &str) -> (&str, Option<&str>) {
+    match target.split_once('#') {
+        Some((t, location)) => (t, Some(location)),
+        None => (target, None),
+    }
+}
+
+/// The `<hyperlinks>` section of the worksheet or an empty string if there are none.
+/// External links reference a relationship (`rId1`, `rId2`...) in the sheet rels part,
+/// see [`get_worksheet_xml_rels`].
+fn get_hyperlinks_section(worksheet: &Worksheet) -> String {
+    let links = get_sorted_links(worksheet);
+    if links.is_empty() {
+        return "".to_string();
+    }
+    let mut hyperlinks_str: Vec<String> = vec![];
+    let mut rel_id = 0;
+    for ((row, column), link) in links {
+        let column_name = match number_to_column(column) {
+            Some(name) => name,
+            None => continue,
+        };
+        let cell_name = format!("{column_name}{row}");
+        match link {
+            Link::External { target, tooltip } => {
+                rel_id += 1;
+                let location_attribute = match split_external_target(target).1 {
+                    Some(location) => format!(" location=\"{}\"", escape_xml(location)),
+                    None => "".to_string(),
+                };
+                let tooltip_attribute = get_tooltip_attribute(tooltip);
+                hyperlinks_str.push(format!(
+                    "<hyperlink ref=\"{cell_name}\" r:id=\"rId{rel_id}\"{location_attribute}{tooltip_attribute}/>"
+                ));
+            }
+            Link::Internal { location, tooltip } => {
+                let location = escape_xml(location);
+                let tooltip_attribute = get_tooltip_attribute(tooltip);
+                hyperlinks_str.push(format!(
+                    "<hyperlink ref=\"{cell_name}\" location=\"{location}\"{tooltip_attribute}/>"
+                ));
+            }
+        }
+    }
+    format!("<hyperlinks>{}</hyperlinks>", hyperlinks_str.join(""))
+}
+
+fn get_tooltip_attribute(tooltip: &Option<String>) -> String {
+    match tooltip {
+        Some(tooltip) => format!(" tooltip=\"{}\"", escape_xml(tooltip)),
+        None => "".to_string(),
+    }
+}
+
+/// The rels part of the worksheet (`xl/worksheets/_rels/sheetN.xml.rels`) holding one
+/// relationship per external link, or `None` if the worksheet has no external links.
+pub(crate) fn get_worksheet_xml_rels(worksheet: &Worksheet) -> Option<String> {
+    let mut relationships_str: Vec<String> = vec![];
+    let mut rel_id = 0;
+    for (_, link) in get_sorted_links(worksheet) {
+        if let Link::External { target, .. } = link {
+            rel_id += 1;
+            let target = escape_xml(split_external_target(target).0);
+            relationships_str.push(format!(
+                "<Relationship Id=\"rId{rel_id}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{target}\" TargetMode=\"External\"/>"
+            ));
+        }
+    }
+    if relationships_str.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{XML_DECLARATION}\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">{}</Relationships>",
+        relationships_str.join("")
+    ))
 }
 
 fn get_formula_attribute(
@@ -460,8 +556,14 @@ pub(crate) fn get_worksheet_xml(
     }
     let sheet_data = sheet_data_str.join("");
 
-    for merge_cell_ref in &worksheet.merge_cells {
-        merged_cells_str.push(format!("<mergeCell ref=\"{merge_cell_ref}\"/>"))
+    for merged_cell in &worksheet.merged_cells {
+        let first_column = number_to_column(merged_cell.column).unwrap_or("A".to_string());
+        let last_column = number_to_column(merged_cell.last_column()).unwrap_or("A".to_string());
+        merged_cells_str.push(format!(
+            "<mergeCell ref=\"{first_column}{}:{last_column}{}\"/>",
+            merged_cell.row,
+            merged_cell.last_row()
+        ))
     }
     let merged_cells_count = merged_cells_str.len();
 
@@ -557,6 +659,8 @@ pub(crate) fn get_worksheet_xml(
     let (cf_sections, cf_ext_lst) =
         get_conditional_formatting_xml(&worksheet.conditional_formatting);
 
+    let hyperlinks_section = get_hyperlinks_section(worksheet);
+
     format!(
         "{XML_DECLARATION}\
 <worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\
@@ -572,6 +676,7 @@ pub(crate) fn get_worksheet_xml(
   </sheetData>\
   {merge_cells_section}\
   {cf_sections}\
+  {hyperlinks_section}\
   {cf_ext_lst}\
 </worksheet>"
     )

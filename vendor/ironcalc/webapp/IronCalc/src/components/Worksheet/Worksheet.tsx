@@ -10,20 +10,20 @@ import {
 import { useTranslation } from "react-i18next";
 import Editor from "../Editor/Editor";
 import type { Cell } from "../types";
+import { getEditorSize } from "../util";
+import type { LinkHoverCell } from "../WorksheetCanvas/cellLinks";
 import {
-  COLUMN_WIDTH_SCALE,
-  LAST_COLUMN,
-  LAST_ROW,
-  ROW_HEIGH_SCALE,
-} from "../WorksheetCanvas/constants";
-import WorksheetCanvas, {
   headerColumnWidth,
   headerRowHeight,
-} from "../WorksheetCanvas/worksheetCanvas";
+  LAST_COLUMN,
+  LAST_ROW,
+} from "../WorksheetCanvas/constants";
+import WorksheetCanvas from "../WorksheetCanvas/worksheetCanvas";
 import type { WorkbookState } from "../workbookState";
 import CellContextMenu from "./ContextMenus/Cell";
 import ColumnHeaderContextMenu from "./ContextMenus/ColumnHeader";
 import RowHeaderContextMenu from "./ContextMenus/RowHeader";
+import LinkTooltip from "./LinkTooltip";
 import usePointer from "./usePointer";
 import "./worksheet.css";
 import { Alert, Prompt } from "../Modal";
@@ -51,6 +51,8 @@ const Worksheet = forwardRef(
       onCut: () => void;
       onCopy: () => void;
       onPaste: () => void;
+      onEditLink?: (row: number, column: number) => void;
+      onDeleteLink?: (row: number, column: number) => void;
     },
     ref,
   ) => {
@@ -84,10 +86,44 @@ const Worksheet = forwardRef(
     );
     const [columnWidthDialogOpen, setColumnWidthDialogOpen] = useState(false);
     const [columnWidthDefault, setColumnWidthDefault] = useState("");
+    // The raw engine error of a rejected autofill (localized when rendered)
+    const [autofillError, setAutofillError] = useState<string | null>(null);
     const [rowHeightDialogOpen, setRowHeightDialogOpen] = useState(false);
     const [rowHeightDefault, setRowHeightDefault] = useState("");
 
     const ignoreScrollEventRef = useRef(false);
+    // The model's scroll position as of the last time it was synced with the
+    // DOM scroller, in either direction (see the render effect and onScroll)
+    const lastModelScroll = useRef<{ x: number; y: number } | null>(null);
+
+    // The cell whose link tooltip is shown (null if hidden). The canvas does
+    // the hover hit-testing and reports it through onLinkHover; the tooltip
+    // itself is the LinkTooltip component. Hiding is delayed so the pointer
+    // can travel from the cell into the tooltip without dismissing it.
+    const [linkTooltipCell, setLinkTooltipCell] =
+      useState<LinkHoverCell | null>(null);
+    const linkTooltipHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const cancelHideLinkTooltip = (): void => {
+      if (linkTooltipHideTimeout.current !== null) {
+        clearTimeout(linkTooltipHideTimeout.current);
+        linkTooltipHideTimeout.current = null;
+      }
+    };
+    const hideLinkTooltip = (): void => {
+      cancelHideLinkTooltip();
+      setLinkTooltipCell(null);
+    };
+    const scheduleHideLinkTooltip = (): void => {
+      if (linkTooltipHideTimeout.current !== null) {
+        return;
+      }
+      linkTooltipHideTimeout.current = setTimeout(() => {
+        linkTooltipHideTimeout.current = null;
+        setLinkTooltipCell(null);
+      }, 300);
+    };
 
     const { model, workbookState, refresh, canEdit, onCut, onCopy, onPaste } =
       props;
@@ -122,7 +158,8 @@ const Worksheet = forwardRef(
         !extendTo ||
         !scrollElement.current ||
         !editor ||
-        !arrayStructure
+        !arrayStructure ||
+        !canvasRef.closest(".ic-root")
       ) {
         return;
       }
@@ -166,6 +203,32 @@ const Worksheet = forwardRef(
           model.setColumnsWidth(sheet, columnStart, columnEnd, width);
           worksheetCanvas.current?.renderSheet();
         },
+        onLinkHover: (cell) => {
+          if (cell) {
+            cancelHideLinkTooltip();
+            // keep the state (and the tooltip) when still on the same cell
+            setLinkTooltipCell((previous) =>
+              previous &&
+              previous.row === cell.row &&
+              previous.column === cell.column
+                ? previous
+                : cell,
+            );
+          } else if (linkTooltipCell !== null) {
+            scheduleHideLinkTooltip();
+          }
+        },
+        onHideLinkTooltip: hideLinkTooltip,
+        onAutofillError: (message) => {
+          // the known rejections get a dialog; anything else stays silent
+          if (
+            message.includes("merged cell") ||
+            message.includes("array formula")
+          ) {
+            setAutofillError(message);
+          }
+        },
+        linkTooltipCell,
         onRowHeightChanges(sheet, row, height) {
           if (height < 0) {
             return;
@@ -191,22 +254,29 @@ const Worksheet = forwardRef(
         spacerElement.current.style.height = `${sheetHeight}px`;
         spacerElement.current.style.width = `${sheetWidth}px`;
       }
-      const left = scrollElement.current.scrollLeft;
-      const top = scrollElement.current.scrollTop;
-      if (scrollX !== left) {
-        ignoreScrollEventRef.current = true;
+      // Push the model's scroll position into the DOM scroller only when the
+      // model changed since the last sync (keyboard navigation, following a
+      // link, switching sheets, ...). During free scrolling the model is
+      // snapped to whole-cell boundaries while the DOM scroller sits mid-cell,
+      // so the two rarely match exactly: re-syncing on every render would jump
+      // the sheet whenever an unrelated state change re-renders (e.g. the link
+      // tooltip on pointer moves).
+      const synced = lastModelScroll.current;
+      if (!synced || synced.x !== scrollX || synced.y !== scrollY) {
+        const previousLeft = scrollElement.current.scrollLeft;
+        const previousTop = scrollElement.current.scrollTop;
         scrollElement.current.scrollLeft = scrollX;
-        setTimeout(() => {
-          ignoreScrollEventRef.current = false;
-        }, 0);
-      }
-
-      if (scrollY !== top) {
-        ignoreScrollEventRef.current = true;
         scrollElement.current.scrollTop = scrollY;
-        setTimeout(() => {
-          ignoreScrollEventRef.current = false;
-        }, 0);
+        if (
+          scrollElement.current.scrollLeft !== previousLeft ||
+          scrollElement.current.scrollTop !== previousTop
+        ) {
+          // the write fires a single (asynchronous) scroll event, consumed in
+          // onScroll; when the browser quantizes the value back to the current
+          // position no event fires, so the flag must stay clear
+          ignoreScrollEventRef.current = true;
+        }
+        lastModelScroll.current = { x: scrollX, y: scrollY };
       }
 
       canvas.renderSheet();
@@ -290,7 +360,11 @@ const Worksheet = forwardRef(
         return;
       }
       if (ignoreScrollEventRef.current) {
-        // Programmatic scroll ignored
+        // Consume the one scroll event fired by the programmatic sync in the
+        // render effect. (Clearing the flag on a timeout instead would lose
+        // the race against the asynchronous event and process the sync as a
+        // user scroll.)
+        ignoreScrollEventRef.current = false;
         return;
       }
       const left = scrollElement.current.scrollLeft;
@@ -298,6 +372,13 @@ const Worksheet = forwardRef(
 
       worksheetCanvas.current.setScrollPosition({ left, top });
       worksheetCanvas.current.renderSheet();
+      // The model snapped to a whole-cell boundary while the DOM scroller sits
+      // wherever the user left it: record the model position so the next
+      // render does not "correct" the DOM scroller back to the boundary.
+      lastModelScroll.current = {
+        x: model.getScrollX(),
+        y: model.getScrollY(),
+      };
     };
 
     return (
@@ -317,6 +398,12 @@ const Worksheet = forwardRef(
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
+
+            // The context menus only offer editing actions (insert/delete,
+            // cut/paste), so they are not shown in read-only mode.
+            if (!canEdit) {
+              return;
+            }
 
             // Store mouse position for menu placement
             setContextMenuPosition({
@@ -434,10 +521,12 @@ const Worksheet = forwardRef(
             }
             const { sheet, row, column } = model.getSelectedView();
             const text = model.getCellContent(sheet, row, column);
-            const editorWidth =
-              model.getColumnWidth(sheet, column) * COLUMN_WIDTH_SCALE;
-            const editorHeight =
-              model.getRowHeight(sheet, row) * ROW_HEIGH_SCALE;
+            const { width: editorWidth, height: editorHeight } = getEditorSize(
+              model,
+              sheet,
+              row,
+              column,
+            );
             workbookState.setEditingCell({
               sheet,
               row,
@@ -489,6 +578,19 @@ const Worksheet = forwardRef(
           />
           <div className="ic-worksheet-row-resize-guide" ref={rowResizeGuide} />
           <div className="ic-worksheet-column-headers" ref={columnHeaders} />
+          {linkTooltipCell ? (
+            <LinkTooltip
+              cell={linkTooltipCell}
+              onFollow={(link) => {
+                worksheetCanvas.current?.followLink(link);
+              }}
+              onEdit={props.onEditLink}
+              onDelete={props.onDeleteLink}
+              onHide={hideLinkTooltip}
+              onPointerEnter={cancelHideLinkTooltip}
+              onPointerLeave={scheduleHideLinkTooltip}
+            />
+          ) : null}
         </div>
         <CellContextMenu
           open={cellContextMenuOpen}
@@ -817,6 +919,16 @@ const Worksheet = forwardRef(
           onClose={() => setRowColErrorTitle(null)}
           title={rowColErrorTitle ?? ""}
           message={rowColErrorTitle ?? ""}
+        />
+        <Alert
+          open={autofillError !== null}
+          onClose={() => setAutofillError(null)}
+          title={t("error_dialog.error_autofill")}
+          message={
+            autofillError?.includes("merged cell")
+              ? t("error_dialog.error_autofill_merged")
+              : t("error_dialog.error_autofill_array")
+          }
         />
         <Prompt
           open={columnWidthDialogOpen}
