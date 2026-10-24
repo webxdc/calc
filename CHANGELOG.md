@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-10-24
+
+### Fixed
+
+- Sync errors: in some cases edits were not shared with other peers or incoming
+  changes were lost
+
+- Language conflicts: peers with different locale settings got broken number
+  formats and formulas. The workbook locale is now always English.
+
+### Removed
+
+- The locale settings panel, since the locale is now fixed.
+
+- Copy/paste entries in the context menu, which did not work.
+
 ## [1.1.0] - 2026-07-10
 
 ### Fixed
